@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-04 原六题、R1–R3 与 C1–C2 均已完整作答，上一轮收尾书面通过见 4.31。用户随后明确要求进一步复习测试，新增综合场景 B1–B5 待答，题目见 4.32；保留既有正确证据，不因新出题将已通过内容恢复为未答。课程仍为 P18，无新实操；实际学习时长未知，历史记录尚未归档。Mac GitHub 授权与真实推送已验证，见第 10 节。
+状态：2026-11-04 用户已提交综合复习 B1、B2，最新反馈见 4.33。B1 主线正确，Deployment／RS 控制器分工、containerd 的身份及状态上报入口已补正待复述；B2a 的 NotFound 判断与查询命令书面通过，B2b 的 exec 定位参数正确，Bash 方案有条件成立，直接执行 cat 的写法已补充未验证。B3–B5 仍待答，空白不计作答错，也不推定为不会。原六题、R1–R3 与 C1–C2 收尾结论保留；课程仍为 P18，无新实操，实际学习时长未知，历史记录尚未归档。Mac GitHub 授权与真实推送已验证，见第 10 节。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -424,9 +424,24 @@
 - 题末提供与 B1、B2a–b、B3a–b、B4a–b、B5a–b 一一对应的空白模板，B2a 分别留判断／理由和查询命令，B2b 留 exec 命令；其余保留我的回答，不预填标准答案。
 - 本轮只新增复习安排与待答状态，尚无新答案，不评分或增加掌握程度。没有读取新视频、连接集群、运行题目命令或新增实践证据；实际学习时长仍未知，继续暂存，不正式归档。
 
+### 4.33 2026-11-04：B1、B2 部分提交与逐项反馈
+
+- 用户本轮实际填写 B1 和 B2a–b；B3–B5 的模板留空，继续按未提交处理，不计作答错或擅自归类为不会。没有提供执行输出，本轮均为书面证据。
+
+| 小问 | 用户实际回答 | 核对与反馈 | 当前状态 |
+| --- | --- | --- | --- |
+| B1 部署流程 | kubectl 提交 Deployment 到 API Server，由 etcd 保存；认为 Deployment 控制器使用 RS 维护 Pod；Scheduler 根据配置与 Node 情况调度；kubelet 使用运行时“运行具体的 containerd”并向 master 上报 Pod 状态 | 提交／保存、先调度再运行、kubelet 与运行时及上报状态的主线正确。需明确 Deployment 控制器创建／管理 RS，RS 控制器创建／维护 Pod，两者经 API Server 读写对象；Scheduler 关注未绑定节点的 Pod，读取 Pod spec 的要求及 Node 条件，将 Pod 绑定到 Node。containerd 本身就是已运行的容器运行时，kubelet 经 CRI 请求它创建／启动应用容器；Pod 状态上报的具体入口是 API Server。原文“调度到具体的 pod”按本题规范为 Node，不将疑似笔误放大为整题错误 | 部分书面正确；三处职责与对象关系已补正，尚未获修正后的完整复述 |
+| B2a NotFound | 不能判定镜像失败，因为没指定 Namespace，本题查询 default，找不到 review 的 Pod；写出 kubectl get pod checkout-0 -n review | 本题 context 已设 default，判断与命令正确。一般规则是不带 -n 使用当前 context 的 Namespace，未设置时才用 default，不能概括所有环境一律查询 default；NotFound 不等于对象已存在但拉取镜像失败 | 本题书面通过；不推定真实 lab-web 的历史故障已验证 |
+| B2b exec | kubectl exec -it checkout-0 -n review -c api -- /bin/bash；进入后再 cat /etc/app/config.yaml | Pod、Namespace、容器和 -- 参数均正确。若 api 镜像含 /bin/bash，先进入再 cat 的方案可行；本题只保证 cat 与文件存在，不能保证 Bash 可用。可直接使用 kubectl exec checkout-0 -n review -c api -- cat /etc/app/config.yaml，减少对 shell 的依赖；-it 用于交互会话，本题直接输出文件不需要它 | exec 定位与基本语法书面通过；Bash 方案注明条件，直接 cat 为助手补充，未获新复述或执行证据 |
+| B3–B5 | 模板空白，未提交答案 | 保留 4.32 的场景、问题和空白作答模板，按用户后续回答逐项反馈；不提前给标准答案或新增考题 | 待答 |
+
+- 官方核对：复核 [组件职责](https://kubernetes.io/docs/concepts/overview/components/)、[Deployment](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)、[ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/)、[节点与控制平面通信](https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/)、[Namespace 请求范围](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/) 与 [kubectl exec](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_exec/)。本轮仅涉及现有 v1.22.2 已有的基础职责和命令，不引入新版特性。
+- 命令位置与用途：上述为书面示例，若以后在 Windows 配好 kubeconfig 的 master 执行，get 用于确认 review/checkout-0 对象，exec 用于取得 api 容器内指定文件内容；本轮未执行、没有输出，不证明真实对象或文件存在。
+- 后续先接收原题 B3–B5，必要时再确认 B1 的修正及 B2b 的直接 exec 写法，不重复考已通过的 B2a。仍在 P18，无新观看位置、集群连接或实践证据；实际学习时长未知，继续暂存。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.32 的题目，接收本轮 B1–B5 的书面答案；允许先答部分题或标记不确定／不会。原六题、R1–R3 与 C1–C2 已收尾，不重复布置。根据新回答逐项核对组件、命令和检查边界，再决定补讲或继续 P19；P19 尚未获已学报告。此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。Mac 只阅读与书面分析；后续按项目规则同步，实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md)、4.32 的原题与 4.33 的反馈，接收 B3–B5 的书面答案；允许先答部分题或标记不确定／不会。B1、B2 已提交，不恢复为未答；B2a 已书面通过，B1 的职责细节及 B2b 的直接 exec 写法已补充，按需要再确认。原六题、R1–R3 与 C1–C2 已收尾，不重复布置。P19 尚未获已学报告，真实 lab-web 是否存在及镜像故障仍未确认。Mac 只阅读与书面分析，不自动创建或清理资源；后续按项目规则同步，实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
