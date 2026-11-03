@@ -53,6 +53,30 @@ python3 scripts/learning_sync.py push
 
 预期显示 `Pull complete` 和 `Push complete`。没有文件变化时不会创建空提交；第二条同步命令可检查推送权限。若出现 `SYNC STOPPED`，按 [同步说明](SYNC_WORKFLOW.md) 处理，不能据此认为已经同步成功。
 
+### 2.1 2026-11-04 本机推送认证诊断
+
+当前 Mac 检查结果：Apple Git 2.50.1 可用，origin 为本项目 HTTPS 仓库，Git 已配置 `osxkeychain` 凭据助手；当前终端找不到 `gh` 或 `brew`，常见 Homebrew 路径也未检测到 brew。已配置的 Git 姓名和邮箱用于提交署名，不代表已经完成 GitHub 登录。
+
+本次执行 `git push --dry-run`，未写入远端，返回：
+
+```text
+fatal: could not read Username for 'https://github.com': terminal prompts disabled
+```
+
+这说明当前命令行 Git 没有取得可用 GitHub 身份。公开仓库可匿名下载／拉取，但推送需要有写权限的登录认证。钥匙串助手已配置，只代表 Git 知道从哪里查找凭据，不代表已经存入可用凭据；其他应用的登录状态也不能据此判断。
+
+同步脚本主动设置 `GIT_TERMINAL_PROMPT=0`、`GCM_INTERACTIVE=never`，避免自动同步挂起等待输入。应先独立完成一次认证，再重试同步。推荐安装 GitHub CLI 后，在 Mac 终端执行：
+
+```bash
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git --hostname github.com
+gh auth status --hostname github.com
+```
+
+浏览器授权由用户本人完成，使用 `Terrencezifeng` 或有该仓库写权限的账户，并允许 Git 使用认证。之后在项目根目录执行 `python3 scripts/learning_sync.py push`；只有显示 `Push complete` 才能认为本地学习提交已经上传。本轮诊断没有安装新工具或更改 Git／钥匙串认证配置，本地提交继续保留。
+
+依据：[GitHub 凭据缓存](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git)、[Git 提交署名](https://docs.github.com/en/get-started/git-basics/setting-your-username-in-git)、[gh 登录](https://cli.github.com/manual/gh_auth_login) 和 [Git 凭据助手配置](https://cli.github.com/manual/gh_auth_setup-git)。
+
 ## 3 给新学习会话的上下文
 
 可直接将下面内容发给 Mac 上此项目中的 Codex：

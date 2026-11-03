@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-04 用户已提交 R1–R3 全部复盘答案，以最新完整提交为准，逐项反馈见 4.30。init 重试范围、Never 不重试、startup 门控、readiness 失败不直接重启与恢复接流量、describe／previous 日志命令及 UID 身份原则已有书面正确证据；Never 下 Pod 的 Failed 状态、实际读取 UID 的命令已纠正待确认。新增两个收尾小问 C1–C2 待答，不重复考已通过内容。退出宽限期、TCP 检查与配置交接等仍按既有状态保留；无本轮实操输出。实际学习时长未知，历史记录尚未归档。
+状态：2026-11-04 用户已完整提交 R1–R3 及收尾 C1–C2，最新反馈见 4.31。C1 准确回答 Never 下普通 init 失败使 Pod Failed、app 未启动；C2 正确书写 JSONPath 读取 metadata.uid 的命令，并说明与此前保存的 UID 比较，两题均书面通过。目前没有待答考题，不自动追加考核。退出宽限期、TCP 检查与配置交接等仍按既有状态保留；无本轮实操输出。实际学习时长未知，历史记录尚未归档。Mac 命令行 Git 尚无可用 GitHub 推送认证，本地学习提交保留，诊断见同节。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -395,9 +395,20 @@
 - 两个收尾小问（C1–C2，均待答）：C1 复述本题 Never 下普通 init 失败后的 Pod phase 与 app 是否启动；C2 写出读取 training-life/order-api-0 的 Pod UID 的命令，并说明需要与什么记录比较。题末附对应空白模板，仅书面作答，不要求实际输出。
 - 课程位置仍为 P18；无集群连接、真实命令执行或新增实验。退出宽限期、TCP／HTTP 检查边界、配置交接等未被本轮覆盖的内容不自动通过。实际学习时长未知，继续暂存，不正式归档。
 
+### 4.31 2026-11-04：C1–C2 书面通过与 Mac GitHub 认证诊断
+
+- 用户实际作答：C1 的 Pod phase 为 `Failed`，app 未启动；C2 为 `kubectl get pod order-api-0 -n training-life -o jsonpath='{.metadata.uid}'`，与此前保存的 UID 比较以判断对象是否更换。
+- 核对结论：C1–C2 均书面通过。Never 下 Pod 最终状态、读取 metadata.uid 的命令及前后证据比较已补齐；R1–R3 和收尾题均已有完整回答，没有待答考题。不据此认定实际查询过题目对象，未新增真实输出，也不把其余未覆盖知识点自动标为掌握。
+- 用户另外询问：Mac 缺少 GitHub 登录凭据是怎么回事。仅诊断该仓库命令行 Git 的认证链路，不读取或打印 Token、私钥或密码。
+- 本机证据：Git 为 Apple Git 2.50.1，origin 为指定仓库的 HTTPS 地址；Git 已配置 `osxkeychain` 凭据助手；当前终端找不到 `gh` 与 `brew`，常见 Homebrew 路径也未检测到 brew。提交姓名和邮箱已有配置，但它们是提交署名，不是 GitHub 登录认证。
+- 推送验证：对该仓库执行非交互 `git push --dry-run`，退出码为 128，报 `fatal: could not read Username for 'https://github.com': terminal prompts disabled`；本次未写入远端。这证明当前 Git 未取得可用推送身份，不能据此推断其他应用是否已经登录 GitHub。
+- 原因与处理：公开仓库可匿名下载／拉取，推送需要有写权限的认证。同步脚本明确设置 GIT_TERMINAL_PROMPT=0、GCM_INTERACTIVE=never，避免自动同步等待输入；当前没有可用凭据时会直接失败。建议安装 GitHub CLI 后，由用户本人完成浏览器授权，再配置 Git 使用该认证并执行同步 push；具体命令见 [Mac 配置说明](../MAC_SETUP.md) 2.1。本轮未安装工具或更改 Git／钥匙串认证配置。
+- 来源与范围：沿用本轮已核对的普通 init、UID 与 JSONPath 官方资料；认证说明另核对 [GitHub 凭据缓存](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git)、[Git 用户名与署名](https://docs.github.com/en/get-started/git-basics/setting-your-username-in-git)、[gh auth login](https://cli.github.com/manual/gh_auth_login) 和 [gh auth setup-git](https://cli.github.com/manual/gh_auth_setup-git)。无集群连接或新视频读取。
+- 下一步：课程位置仍为 P18；可继续 P19 的 readiness／liveness 对照阅读，Mac 只做阅读与书面分析。实际学习时长未知，认证诊断与同步耗时不计入学习时长，继续暂存。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.30 的最新反馈。原六题和 R1–R3 均已完整提交，接收收尾 C1（Never 下 Pod phase／app 状态）与 C2（读取 UID 的命令与比较依据）；不重考已通过的 R2 和 describe／logs 语法。退出宽限期、TCP 等补充尚未验证。题目对象均为假设；此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。Mac 仅书面复盘；实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.31 的最新反馈。原六题、R1–R3 与 C1–C2 均已有完整作答，目前没有待答考题；可沿课程继续 P19 的 readiness／liveness 对照阅读，不自动追加考核或把 P19 标为已学。退出宽限期、TCP 等补充尚未验证。此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。Mac 只阅读与书面分析；GitHub 推送需先补齐当前命令行认证，本地提交继续保留。实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
