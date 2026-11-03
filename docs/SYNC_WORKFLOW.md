@@ -71,3 +71,9 @@ python -B -m unittest discover -s tests -v
 Windows 的本地验证与实际 GitHub 推送可以在当前电脑完成。公司 Mac 的首次登录、Codex 项目打开和实际同步需在该电脑执行，不能仅凭 CI 通过认定其本地环境已配置完成。
 
 Git 快进与合并行为参考 [Git 官方文档](https://git-scm.com/docs/git-merge)。
+
+## 6 首次迁移验证记录
+
+- 2026-11-03：首次提交 `5d743b9` 已推送至指定 GitHub 仓库 main，本地与远端 SHA 一致；共发布 45 个文件，排除 `.local/` 和 `.idea/`，历史 ZIP、清单及日志按原始字节保留。
+- Windows 本地 13 项同步集成测试通过；真实仓库上的脚本 `pull` 与无变化 `push` 均成功，工作树干净。
+- 已配置三平台 GitHub Actions；运行结果以 [Actions 页面](https://github.com/Terrencezifeng/k8s_learning/actions) 为准。公司 Mac 尚需按迁移说明配置 Git、Python 和登录，不能把 CI 或 Windows 验证等同于公司 Mac 已安装完成。
