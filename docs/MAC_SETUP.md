@@ -55,7 +55,7 @@ python3 scripts/learning_sync.py push
 
 ### 2.1 2026-11-04 本机推送认证诊断
 
-当前 Mac 检查结果：Apple Git 2.50.1 可用，origin 为本项目 HTTPS 仓库，Git 已配置 `osxkeychain` 凭据助手；当前终端找不到 `gh` 或 `brew`，常见 Homebrew 路径也未检测到 brew。已配置的 Git 姓名和邮箱用于提交署名，不代表已经完成 GitHub 登录。
+诊断时 Mac 检查结果：Apple Git 2.50.1 可用，origin 为本项目 HTTPS 仓库，Git 已配置 `osxkeychain` 凭据助手；当时终端找不到 `gh` 或 `brew`，常见 Homebrew 路径也未检测到 brew。GitHub CLI 后续安装结果见 2.2。已配置的 Git 姓名和邮箱用于提交署名，不代表已经完成 GitHub 登录。
 
 本次执行 `git push --dry-run`，未写入远端，返回：
 
@@ -76,6 +76,17 @@ gh auth status --hostname github.com
 浏览器授权由用户本人完成，使用 `Terrencezifeng` 或有该仓库写权限的账户，并允许 Git 使用认证。之后在项目根目录执行 `python3 scripts/learning_sync.py push`；只有显示 `Push complete` 才能认为本地学习提交已经上传。本轮诊断没有安装新工具或更改 Git／钥匙串认证配置，本地提交继续保留。
 
 依据：[GitHub 凭据缓存](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git)、[Git 提交署名](https://docs.github.com/en/get-started/git-basics/setting-your-username-in-git)、[gh 登录](https://cli.github.com/manual/gh_auth_login) 和 [Git 凭据助手配置](https://cli.github.com/manual/gh_auth_setup-git)。
+
+### 2.2 2026-11-04 GitHub CLI 安装验证
+
+用户明确要求安装 GitHub CLI。已从 [官方稳定版 v2.103.3](https://github.com/cli/cli/releases/tag/v2.103.3) 下载 macOS arm64 ZIP；GitHub 发布接口确认为非预发布版本，发布日期为 2026-10-26。安装包通过官方 SHA-256 清单校验，清单本身的 SHA-256 也与官方发布接口的 digest 一致。
+
+- 可执行文件：`/Users/zifeng.deng/.local/bin/gh`，该目录原已位于 PATH，无需修改 shell 配置。
+- 许可证：`/Users/zifeng.deng/.local/share/licenses/gh/LICENSE`。
+- 实际验证：`command -v gh` 返回上述路径；`gh --version` 返回 `gh version 2.103.3 (2026-10-26)`；安装前后可执行文件 SHA-256 一致，架构为 Mach-O arm64。
+- 登录状态：`gh auth status --hostname github.com` 返回尚未登录任何 GitHub 主机；安装成功不等于认证已完成。
+
+本次使用官方独立安装包，未安装 Homebrew。下一步由用户在 Mac 终端执行 2.1 的浏览器登录与 Git 凭据配置命令；授权成功后重新运行学习同步 push，补传保留的本地提交。此处仅记录工具安装，不新增 K8s 学习完成度或实操证据。
 
 ## 3 给新学习会话的上下文
 
