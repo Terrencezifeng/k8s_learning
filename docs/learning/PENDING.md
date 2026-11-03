@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-04 用户已提交综合复习 B1、B2，最新反馈见 4.33。B1 主线正确，Deployment／RS 控制器分工、containerd 的身份及状态上报入口已补正待复述；B2a 的 NotFound 判断与查询命令书面通过，B2b 的 exec 定位参数正确，Bash 方案有条件成立，直接执行 cat 的写法已补充未验证。B3–B5 仍待答，空白不计作答错，也不推定为不会。原六题、R1–R3 与 C1–C2 收尾结论保留；课程仍为 P18，无新实操，实际学习时长未知，历史记录尚未归档。Mac GitHub 授权与真实推送已验证，见第 10 节。
+状态：2026-11-04 综合复习 B1–B5 均已提交，最新反馈见 4.34。B5 的退出预算与到期强制结束书面通过；B3 的共享卷方向、B4 的 TCP 成功及 HTTP 检查方向部分正确，容器文件系统、配置来源与动态文件交接、TCP 无 HTTP 状态码、检查方式与探针用途等已补正。新增短复盘 F1（共享卷路径交接）、F2（方式／用途／单次 HTTP 判定）待答；B1 职责细节与 B2b 工具依赖仍按各自证据保留。原六题、R1–R3 与 C1–C2 收尾结论不变；课程仍为 P18，无新实操，实际学习时长未知，历史记录尚未归档。Mac GitHub 授权与真实推送已验证，见第 10 节。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -439,9 +439,28 @@
 - 命令位置与用途：上述为书面示例，若以后在 Windows 配好 kubeconfig 的 master 执行，get 用于确认 review/checkout-0 对象，exec 用于取得 api 容器内指定文件内容；本轮未执行、没有输出，不证明真实对象或文件存在。
 - 后续先接收原题 B3–B5，必要时再确认 B1 的修正及 B2b 的直接 exec 写法，不重复考已通过的 B2a。仍在 P18，无新观看位置、集群连接或实践证据；实际学习时长未知，继续暂存。
 
+### 4.34 2026-11-04：B3–B5 提交与正常退出／强制结束答疑
+
+- 用户已补交 B3a–b、B4a–b 和 B5a–b；至此原 B1–B5 均已有回答，不再列作未答。下表保留正确部分、原有误解和助手新解释，不将讲解直接计为掌握。
+
+| 小问 | 用户实际回答 | 核对与反馈 | 当前状态 |
+| --- | --- | --- | --- |
+| B3a 文件共享 | 认为不一定自动共享，原因是文件安全问题，需要额外配置 | 不自动共享的方向正确，但直接根因是两个容器默认有各自的根文件系统；同一个 Pod、相同路径名不会自动将文件合并，不能只归结为安全策略拒绝访问 | 方向部分正确；文件系统边界已补正待 F1 |
+| B3b 配置交接 | 提到 Volume 挂载、容器外修改配置，以及 ConfigMap 可在运行前提供配置 | 共享卷方向正确，需明确让 init 与 app 挂载同一个卷，如 emptyDir：init 写入后，app 从对应挂载路径读取。ConfigMap 可以向 app 注入预先已有配置；本题由 init 运行时生成的文件不会自动变成 ConfigMap 数据，可用共享卷交接。若 init 需要处理 ConfigMap 模板，可从只读配置源读取，再向共享可写卷输出最终文件，不要求本轮完整实现 | 共享卷与配置来源已有部分正确认识；同卷挂载和生成文件交接已补充待 F1 |
+| B4a TCP 与 HTTP 状态码 | 认为 TCP 探测正常，只检查连接成功／失败；随后说有 HTTP 500 返回所以 TCP 成功、返回 200 | 本题建连正常，因此 TCP 探测成功；但该探测不发 HTTP 请求，也不读取或返回 HTTP 200。业务接口返回 500 与 TCP 建连成功可同时发生，TCP 成功不能转换为 HTTP 成功 | TCP 检查连接的主线正确；HTTP 状态码混用已纠正待 F2 |
+| B4b 检查方式和用途 | 提出 HTTP 探测、liveness；想核对 HTTP 返回码和 Pod 存活／就绪状态 | HTTP 检查方向及检查返回码正确。HTTP／TCP 是检查方式，readiness／liveness 是用途；本题可将 readiness 改为 HTTP 检查，无需因此改成 liveness。应核对实际监听端口、HTTP／HTTPS、健康路径及其成功／失败含义；Pod 就绪状态不能代替这些输入信息。普通 HTTP 探测中 200–399 成功，500 失败。是否触发重启应另按 liveness 的明确判据设计，不能只凭业务接口 500 一概决定 | 部分书面正确；方式／用途及判定标准已补正待 F2 |
+| B5a 剩余时间 | 10s | 本题 30 秒总预算减去 preStop 的 20 秒，收到 SIGTERM 后约剩 10 秒，正确 | 书面通过 |
+| B5b 退出结果 | 不能完成 15 秒退出，超时会被强制结束；追加询问“正常结束是怎么结束的，异常又是怎么结束的？” | 本题 15 秒需求超过约 10 秒剩余预算，超时强制结束的结论正确。终止机制的新问题见下方独立问答，不把已正确的时间计算恢复为未答 | 结论书面通过；信号与应用收尾机制已讲解未验证 |
+
+- 用户实际问题：正常结束具体如何发生，异常／强制结束又如何发生？
+- 解答（按本题单应用容器、SIGTERM、排除特殊延期）：终止预算从开始终止时计时，先执行 preStop；约第 20 秒完成钩子后，kubelet 请求容器运行时向容器主进程发送 SIGTERM。应用若实现终止信号处理，可停止接收新工作、完成进行中的请求、刷新缓冲／关闭连接，然后主动退出；SIGTERM 本身不保证应用已实现优雅收尾。如果进程在预算内退出，不需要再强杀。约第 30 秒预算耗尽时仍有进程存活，则运行时发送 SIGKILL，进程无法捕获、忽略或阻塞它，也无法依靠自己的退出处理器继续收尾。这里解释的是删除 Pod 时的优雅退出与超时强制结束；程序崩溃等属于其他退出原因，不把所有异常都称为同一种 SIGKILL 场景。
+- 官方核对：查阅 [卷与各容器文件系统视图](https://kubernetes.io/docs/concepts/storage/volumes/#how-volumes-work)、[同 Pod 共享卷示例](https://kubernetes.io/docs/tasks/access-application-cluster/communicate-containers-same-pod-shared-volume/)、[ConfigMap 配置注入](https://kubernetes.io/docs/concepts/configuration/configmap/)、[v1.22 探针](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)、[v1.22 Pod 终止流程](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/concepts/workloads/pods/pod-lifecycle.md)、[preStop 与宽限期](https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/) 和 [Linux signal(7)](https://man7.org/linux/man-pages/man7/signal.7.html)。只讲现有 v1.22.2 支持的普通 init、共享卷、基础 HTTP／TCP 探测和题设终止流程，不引入新版停止信号字段。
+- 两个短复盘（F1–F2，均待答）：F1 假设同一个 emptyDir 在 init 挂载 /work、在 app 挂载 /etc/app，init 写 /work/config.ini；询问 app 读取哪个路径，以及为什么挂载路径不同仍能共享。F2 假设配置 readinessProbe.httpGet，端点本次返回 503；分别回答探针用途、检查方式、本次成功／失败，并说明 TCP 探测成功是否意味着得到 HTTP 200。题末附与全部小问对应的空白模板，仅书面作答。
+- 本轮 B5 已通过，不追加同类计算题；原 B1 角色细节、B2b 直接 exec 写法仍是已补充未验证，后续按需要巩固，不把全套题重考一次。无集群连接、新视频读取、题目命令执行或实践输出；课程仍为 P18，实际学习时长未知，继续暂存。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md)、4.32 的原题与 4.33 的反馈，接收 B3–B5 的书面答案；允许先答部分题或标记不确定／不会。B1、B2 已提交，不恢复为未答；B2a 已书面通过，B1 的职责细节及 B2b 的直接 exec 写法已补充，按需要再确认。原六题、R1–R3 与 C1–C2 已收尾，不重复布置。P19 尚未获已学报告，真实 lab-web 是否存在及镜像故障仍未确认。Mac 只阅读与书面分析，不自动创建或清理资源；后续按项目规则同步，实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.34，接收短复盘 F1（共享卷的路径交接）、F2（检查方式／用途／HTTP 判定）的答案；允许标记不确定／不会。原 B1–B5 均已作答，B5 时间与超时结论通过，不恢复为待答或重复布置。B1 职责细节、B2b 直接 exec 和 SIGTERM／SIGKILL 机制按需要巩固，保留已讲解未验证的边界。原六题、R1–R3 与 C1–C2 收尾结论不变；P19 尚未获已学报告。Mac 只阅读与书面分析，不自动创建或清理资源；后续按项目规则同步，实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
