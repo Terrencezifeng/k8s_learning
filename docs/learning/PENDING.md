@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-04 用户已完整提交 R1–R3 及收尾 C1–C2，最新反馈见 4.31。C1 准确回答 Never 下普通 init 失败使 Pod Failed、app 未启动；C2 正确书写 JSONPath 读取 metadata.uid 的命令，并说明与此前保存的 UID 比较，两题均书面通过。目前没有待答考题，不自动追加考核。退出宽限期、TCP 检查与配置交接等仍按既有状态保留；无本轮实操输出。实际学习时长未知，历史记录尚未归档。Mac 已安装 GitHub CLI 2.103.3，完成 GitHub 授权并成功补推此前 4 个提交；同步验证见第 10 节。
+状态：2026-11-04 原六题、R1–R3 与 C1–C2 均已完整作答，上一轮收尾书面通过见 4.31。用户随后明确要求进一步复习测试，新增综合场景 B1–B5 待答，题目见 4.32；保留既有正确证据，不因新出题将已通过内容恢复为未答。课程仍为 P18，无新实操；实际学习时长未知，历史记录尚未归档。Mac GitHub 授权与真实推送已验证，见第 10 节。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -406,9 +406,27 @@
 - 来源与范围：沿用本轮已核对的普通 init、UID 与 JSONPath 官方资料；认证说明另核对 [GitHub 凭据缓存](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git)、[Git 用户名与署名](https://docs.github.com/en/get-started/git-basics/setting-your-username-in-git)、[gh auth login](https://cli.github.com/manual/gh_auth_login) 和 [gh auth setup-git](https://cli.github.com/manual/gh_auth_setup-git)。无集群连接或新视频读取。
 - 下一步：课程位置仍为 P18；可继续 P19 的 readiness／liveness 对照阅读，Mac 只做阅读与书面分析。实际学习时长未知，认证诊断与同步耗时不计入学习时长，继续暂存。
 
+### 4.32 2026-11-04：按用户要求开展 B1–B5 综合书面复习
+
+- 用户真实请求：“进一步帮我复习测试一下之前学过的内容”。本轮覆盖已学 P1–P18 中已讨论但尚缺完整验证的内容；不推进至 P19，不重考刚通过的 init 重试／Never、startup 门控、readiness 失败恢复和 UID 读取题。
+- 出题依据：同步后读取学习画像、当前进度、历史问答与项目环境，聚焦完整组件协同、NotFound 证据边界、exec、init 配置交接、TCP／HTTP 检查深度和 preStop 宽限期。此前正确书面回答与指导下实操证据保持原状态。
+- 题目均为假设场景，仅书面作答；命令未执行，不要求提供真实集群输出。若以后实际执行，应在 Windows 实验环境、配好 kubeconfig 的 master 上操作，Mac 不连接集群。允许回答不确定／不会，可以先提交部分题目。
+
+| 题号 | 场景与问题 | 当前状态 |
+| --- | --- | --- |
+| B1 部署完整流程 | 假设提交一个 Deployment，随后应用容器正常运行。按步骤解释对象如何保存、ReplicaSet 和 Pod 如何产生、谁选节点、谁启动容器以及谁回报状态；串起 API Server、etcd、Deployment 控制器、RS 控制器、Scheduler、kubelet、containerd，并说明对象信息如何交换 | 待答；不预填流程或认定完整掌握 |
+| B2 对象定位与 exec | 已知 review/checkout-0 存在、容器 api 与 metrics 运行正常，api 中有 cat 和 /etc/app/config.yaml；当前 context 的 Namespace 为 default。a）不带 -n 执行 kubectl get pod checkout-0 返回 NotFound，能否判定镜像拉取失败？说明理由并写查询正确对象的命令。b）写在该 Pod 的 api 容器中查看 /etc/app/config.yaml 的 exec 命令 | 待答；只写命令，无实际输出 |
+| B3 init 配置交接 | 普通 init-config 已在自己的 /work/config.ini 写入配置并成功退出，app 从自己的同名路径读取却报文件不存在，两个容器均未配置 volumeMounts。a）同 Pod、同路径是否意味着自动共享文件，为什么？b）提出让 app 读到 init 生成配置的改造思路，不要求完整 YAML | 待答；不将 init 已成功误当文件已交接 |
+| B4 健康检查深度 | 8080 端口 TCP 握手正常，但 HTTP 业务接口持续返回 500；当前 readiness 采用该端口的 TCP 探测。a）探测会成功还是失败，为什么？b）为了识别 HTTP 服务不可用，应改用什么检查方式，并确认应用的哪些信息 | 待答；测试检查深度，不重考 readiness 失败后的动作 |
+| B5 优雅退出预算 | 单应用容器正常删除，Pod 级 terminationGracePeriodSeconds=30；preStop 用 20 秒结束，应用收到 SIGTERM 后需 15 秒才能退出，忽略额外开销和特殊延期。a）收到 SIGTERM 后约剩多少时间？b）能否按应用需要的时间正常完成退出，超时如何处理 | 待答；不要求真实删除资源 |
+
+- 官方核对：查阅 [组件职责](https://kubernetes.io/docs/concepts/overview/components/)、[kubectl exec](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_exec/)、[同 Pod 通过共享卷交接文件](https://kubernetes.io/docs/tasks/access-application-cluster/communicate-containers-same-pod-shared-volume/)、[v1.22 Pod 生命周期与终止](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/concepts/workloads/pods/pod-lifecycle.md) 和 [v1.22 探针](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)。按现有 v1.22.2 普通容器、普通 init 和基础探针判题，不引入新版 sidecar 或探针级终止配置。
+- 题末提供与 B1、B2a–b、B3a–b、B4a–b、B5a–b 一一对应的空白模板，B2a 分别留判断／理由和查询命令，B2b 留 exec 命令；其余保留我的回答，不预填标准答案。
+- 本轮只新增复习安排与待答状态，尚无新答案，不评分或增加掌握程度。没有读取新视频、连接集群、运行题目命令或新增实践证据；实际学习时长仍未知，继续暂存，不正式归档。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.31 的最新反馈。原六题、R1–R3 与 C1–C2 均已有完整作答，目前没有待答考题；可沿课程继续 P19 的 readiness／liveness 对照阅读，不自动追加考核或把 P19 标为已学。退出宽限期、TCP 等补充尚未验证。此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。Mac 只阅读与书面分析；GitHub 授权与真实推送已验证，后续按项目规则同步。实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.32 的题目，接收本轮 B1–B5 的书面答案；允许先答部分题或标记不确定／不会。原六题、R1–R3 与 C1–C2 已收尾，不重复布置。根据新回答逐项核对组件、命令和检查边界，再决定补讲或继续 P19；P19 尚未获已学报告。此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。Mac 只阅读与书面分析；后续按项目规则同步，实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
