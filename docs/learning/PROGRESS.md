@@ -4,9 +4,9 @@
 
 ## 1 当前进度概览
 
-2026-11-02 用户报告已学习 P16–P18，并提交全部六道 Pod 生命周期场景题。三类探针用途、Service 静态后端选择、退出按 Always 恢复与退避等有新增书面正确证据；init 重试、startup 门控、宽限期、动态就绪及排障命令等已纠正／补充待验证。新增复盘 R1–R3 待答，无新增实操证据。原始日期、回答、输出和纠正过程保留在 [PENDING.md](PENDING.md)。
+2026-11-02 用户报告已学习 P16–P18，并提交全部六道 Pod 生命周期场景题。当轮三类探针用途、Service 静态后端选择、退出按 Always 恢复与退避等有新增书面正确证据，并布置 R1–R3 复盘；后续作答与当前状态见下文。原始日期、回答、输出和纠正过程保留在 [PENDING.md](PENDING.md)。
 
-2026-11-04 用户确认已读完上轮反馈，接续原有 R1–R3 书面复盘，尚未提交本轮答案；阅读完成不计为纠正内容已掌握。课程位置仍为 P18，无新实操，详见 PENDING.md 4.29。
+2026-11-04 用户确认已读完上轮反馈，并已完整提交 R1–R3，以最新完整答案为准。init 失败重试范围、Never 不重试、startup 门控、readiness 失败不直接重启及就绪恢复、describe／上一实例日志命令、UID 身份原则新增书面通过；Never 下 Pod 的 Failed 状态和读取 UID 的命令已纠正，收尾 C1–C2 待答。R2 中“流量为 0”已限定为该 Pod 不再接收普通 Service 新流量，不能推断整个 Service 无流量。课程位置仍为 P18，无新实操，详见 PENDING.md 4.30。
 
 | 项目 | 当前结论 | 证据与边界 |
 | --- | --- | --- |
@@ -14,7 +14,7 @@
 | P1–P12 | 按用户确认记为已学完成 | 2026-10-28 用户明确确认；不等于每个知识点都已逐项实操验收 |
 | P13 | 已讨论资源作用域、Pod 定义和创建运行流程，并有部分实操／复述证据 | 精确观看终点未单独确认；不能据进入后续章节将所有概念标为掌握 |
 | P14–P15 | 用户已报告学习“资源清单的编写 1、2”；已布置的章节题与微复盘均已作答 | 多项书面纠正已通过，具体能力见下表；没有未答题，不自动追加考核 |
-| P16–P18 | 2026-11-02 用户报告已学习，已提交全部六道场景题 | 部分书面验证通过，纠正与补充见 PENDING.md 4.28；新复盘 R1–R3 待答，无本轮实验输出 |
+| P16–P18 | 已报告学习；原六题及 2026-11-04 的 R1–R3 均完整作答 | 本轮多项书面通过，最新反馈见 PENDING.md 4.30；仅收尾 C1–C2 待答，无本轮实验输出 |
 | P19 及以后 | 用户尚未报告新的学习位置 | P14–P25 的助手预习资料已备齐，预习不计为用户完成进度 |
 | 基础实验 | 四轮基础实验和收尾清理完成 | 用户按指导亲手完成，有真实输出；不是助手代操作，也未据此认定已能脱离提示独立复现 |
 | 当前实验状态 | 专用 Namespace k8s-lab-20261029 及实验工作负载已清理 | 清理有用户输出；后续模拟题中的 lab-web 是否存在仍未知，不能混为同一次部署 |
@@ -41,16 +41,16 @@
 | Namespace 与 Node | 跨两个节点的 dev 仍只有 1 个；能从实际输出辨认归属与运行位置；章节题正确判断 Node 不隶属 Namespace | 具体关系已有证据；metadata／HPA 分类另列待巩固 |
 | Pod READY 与 Deployment READY | Pod READY 统计就绪容器数／配置容器数；Deployment 1/3 解释为 1 个就绪 Pod 副本／3 个期望副本 | 纠正后通过；2026-10-30 又正确判断两进程运行、仅一容器就绪为 1/2，并指出 Running 不保证 Ready |
 | 模板与副本数量 | 一份双容器模板、replicas=3，对应稳定情况下 3 个 Pod、6 个应用容器；明确提到 RS 控制器按模板维护多个 Pod | 最新纠正后书面通过，不再记为未答；不推定实际集群当前已有 3 个 Pod |
-| 字段说明与对象详情 | 曾正确写出 kubectl explain deployment.spec.replicas 并定位指定 Namespace 的 describe 对象 | 保留历史证据；2026-11-02 新题将容器 api 当作 describe 的 Pod 名，已纠正待迁移复盘；无新执行输出 |
-| 多容器日志定位 | 曾正确写出 kubectl logs api-demo -n training -c worker；2026-11-02 理解 --previous 与 --timestamps | 保留历史证据；本轮 logs 多写独立 pod 参数，完整语法已纠正待复盘；exec 另行保留未验证 |
+| 字段说明与对象详情 | explain 完整路径有正确证据；2026-11-04 正确写出 kubectl describe pod order-api-0 -n training-life | 新名称迁移书面通过，11-02 的 Pod／容器名混淆已在本次修正；无新执行输出，读取 UID 另列待确认 |
+| 多容器日志定位 | 2026-11-04 正确写出 kubectl logs order-api-0 -n training-life -c server --previous --timestamps | 新名称、容器选择与完整语法书面通过，11-02 多写独立 pod 参数的问题已修正；未执行，exec 另行保留未验证 |
 | 资源清单与创建边界 | 场景题中的双容器 YAML、标签查询书面符合要求；能区分 spec 的期望、status 的观测，以及 created 与容器启动 | 本轮没有创建成功回显；不能将填写 status 当作控制运行状态 |
 | API 与镜像版本 | 正确判断仅改镜像标签不需改变 apiVersion | 核心区别通过；“API 组及版本”的完整措辞是随后补充，尚未单独复述验证 |
 | 端口声明与应用监听 | 能解释 containerPort=8080 不改变仍按配置监听 80 的 Nginx；同 Pod 同地址同协议端口冲突的原因回答正确 | 书面通过；没有真实改端口、监听检查或 Service 访问证据 |
 | 容器重启与 Pod 补建 | 正确判断 Always 下正常退出仍重启、无控制器的普通 Pod 删除后不自动补建；受控 Pod 补建有前述实操证据 | 基本区别有证据；完整控制器、kubelet 职责边界仍需巩固 |
-| 普通 init 与 postStart | 知道普通 init 全部顺序成功后才启动 app；知道 postStart 不保证先于应用完成，提出用 init 做前置准备 | 核心书面通过；init 重试/Never、配置交接与宽限期另列待验证 |
-| 三类探针与执行组件 | 正确选择 startup/readiness/liveness 的用途，答 kubelet，指出 startup 成功不保证 Ready | 用途与组件书面通过；解释中的 kubenet 拼写已纠正；startup 门控、阈值及动作细节待复述 |
-| DNS 与 Service 基础选择 | 指出 DNS 解析不证明数据库能查询，提出 SELECT；正确选择同 Namespace 中标签匹配且 Ready 的 A，排除 B/C | 书面通过；mysqladmin ping、TCP 检查与 Service 动态恢复另待验证 |
-| 退出重启与退避 | 无 liveness 时主进程退出仍受 Always 管理；将 CrashLoopBackOff 解释为反复失败后的间隔增加 | 主线书面通过；Pod UID 与容器身份判别为新补充，待复盘 |
+| 普通 init 与 postStart | 顺序成功后才启动 app、postStart 无先后保证已有证据；2026-11-04 答对只重试失败 init、Never 同样适用且不重试 | 新增重试范围与策略边界书面通过；Never 下 Pod phase 尚需 C1 准确复述，配置交接与宽限期仍未验证 |
+| 三类探针与执行组件 | 用途、kubelet、startup 成功不保证 Ready 已通过；2026-11-04 答对 startup 成功前另外两类不探测 | startup 门控新增书面通过；readiness 失败不直接重启及恢复另有本轮正确证据，不据此将所有阈值细节标为掌握 |
+| DNS 与 Service 基础选择及就绪恢复 | DNS 与查询边界、静态后端选择已有证据；2026-11-04 正确解释 readiness 失败不直接重启、撤回接流量资格、恢复 Ready 后不需重建 | 核心书面通过；“流量为 0”已收窄为该 Pod 的普通 Service 新流量，不推定整个 Service 无后端；mysqladmin ping、TCP 边界仍未验证 |
+| 退出重启、退避与 Pod 身份 | 退出按 Always 恢复、退避已有证据；2026-11-04 答对 UID 变化说明 Pod 对象更换 | UID 身份原则新增书面通过；误用 describe／logs 读取 UID 已纠正待 C2，containerID／restartCount 的联合判读仍未验证 |
 
 ### 2.3 仍需巩固或补充验证
 
@@ -58,10 +58,10 @@
 | --- | --- | --- |
 | 完整组件协同 | 创建对象→存储→选节点→运行的顺序正确；已校正 Deployment／RS 对象与控制器、经 API Server 读写和监听、Scheduler 绑定、containerd 与容器的区别 | 能在完整复述中准确说出两类控制器、API Server、etcd、Scheduler、kubelet、运行时及状态回报；最新正确提到 RS 控制器不等于整条链均已通过 |
 | Pod 的完整定义 | 已理解对象存在不代表容器启动；最小部署／调度单位及共享环境为助手补充 | 能同时说明 API 对象与节点上的运行环境，且不将 Pod 等同于 YAML 文件或某个进程 |
-| 就绪判断的机制 | Running/startup 成功不保证 Ready 的核心判断通过；startup 门控及 readiness 失败/恢复的流量变化刚补充 | R2 验证门控、失败不直接重启及恢复接流量；容器/Pod Ready 与额外条件完整关系仍待验证 |
-| 普通 init 重试与退出 | 本轮误认为上下游依赖导致整条 init 链重跑，猜 Never 不管 init；已按官方行为纠正 | R1 验证通常只重试失败 init 及 Never 下 Pod 失败；不扩展到 sandbox 重建特殊情况 |
+| 就绪判断的机制 | R2 已书面验证 startup 门控、readiness 失败不直接重启及恢复接流量；流量范围已补充 | 不重复布置 R2；无真实访问实验，容器／Pod Ready 与额外条件完整关系仍待验证 |
+| 普通 init 退出状态 | R1 已答对重试失败 init、Never 不重试及 app 不启动；将 Pod 结果笼统称未运行 | C1 准确复述普通 init 失败且 Never 下 Pod phase 为 Failed；不再把重试范围列作未答 |
 | 钩子、健康检查和配置交接 | postStart 无先后保证已通过；preStop 共用宽限期、TCP 不检查 HTTP 500、ping 不证明查询、init 经共享卷交接均为本轮补充 | 仍为已讲解未验证，后续按需要复述或实验，不因当前三题未覆盖而记为掌握 |
-| 排障命令与对象身份 | 本轮 describe 写错 Pod 名，logs 多独立 pod 参数；--previous 思路正确；UID/containerID/restartCount 刚讲解 | R3 以新名称验证 describe/logs 语法和 Pod UID；退出码与应用日志分别取证 |
+| 读取 Pod 身份与联合判读 | R3 的 describe／logs 命令和 UID 身份原则已通过；读取 UID 错选 describe／logs，已补充 get -o yaml／JSONPath | C2 写出可读取 metadata.uid 的命令并说明与此前 UID 记录比较；不重考已通过命令，containerID／restartCount 联合判读仍待验证 |
 | exec 与查询范围 | logs／describe 有历史正确证据及本轮迁移错误，explain 已通过；exec 的 Pod 参数、-c、-- 尚未重验；-A 覆盖 -n、当前 context 默认 Namespace 仍缺复述 | 在新名称场景中准确定位对象与容器，说明各选项作用范围 |
 | NotFound 的证据边界 | 曾把未带 -n 的 lab-web NotFound 归因于镜像失败；已解释但未获修正后的回答或定位输出 | 先确认对象名称、Namespace、创建结果，再判断故障；不把没有对象和已有对象拉取失败混为一谈 |
 | 实际对象数量 | 用户曾说“目前只看到一个 Pod”，没有提供对应查询；模板／副本计算后来已答对 | 若再讨论真实现象，取得命令和输出后判断；不把缺证据的现象升级为已确认故障 |
@@ -111,7 +111,7 @@
 - P6–P7：Pod 与 pause 的概念、使用 Docker 模拟容器共享环境；Rocky Linux 与 Docker 的实验准备。
 - P8–P9：Pod 网络模型、CNI/IPAM、覆盖与非覆盖网络、Calico 组件及 VXLAN、IP-in-IP、BGP 路由相关模式。
 - P10–P12：实验网络拓扑、节点准备、Docker 与 cri-dockerd、kubeadm 初始化与加入节点、部署 Calico、证书与静态 Pod 启动流程。
-- 后续默认以这些内容作为已有学习背景；用户已报告学习 P14–P18，资源清单题及微复盘均已作答，2026-11-02 Pod 生命周期六题也已全部提交，当前为纠正后的 R1–R3 复盘待答。P13 待巩固点按需回顾，不要求从第一节重学。
+- 后续默认以这些内容作为已有学习背景；用户已报告学习 P14–P18，资源清单题及微复盘、2026-11-02 生命周期六题及 2026-11-04 R1–R3 均已作答，当前为收尾 C1–C2 待答。P13 待巩固点按需回顾，不要求从第一节重学。
 - 用户此前的实际学习日期和耗时尚未提供；不以视频总时长填充学习时长。
 
 ## 7 实验环境
@@ -130,6 +130,6 @@
 
 ## 8 下次起点
 
-1. 原六题已全部提交，反馈见 [PENDING.md](PENDING.md) 4.28；接收新复盘 R1（init 重试/Never）、R2（startup 门控/readiness 失败恢复）、R3（describe/logs 新对象定位与 UID）。允许填写不确定／不会，逐项记录修正证据；不重复考已通过的用途选择、explain 和副本数量。
+1. 原六题及 R1–R3 均已完整提交，最新反馈见 [PENDING.md](PENDING.md) 4.30；接收 C1（Never 下 Pod phase 与 app 状态）和 C2（读取 UID 的命令及比较依据）。不重考已通过的 R2、describe／logs、init 重试范围、用途选择、explain 和副本数量。
 2. 沿用户已学习的 P16–P18 接续，重点为普通 init、生命周期钩子、探针、健康检查边界、Service 后端与重启排障。查阅 [P14–P25 预习索引](video-notes/P014-P025-预习索引.md) 定位资料；P19 以后仍不计作用户已学。
-3. 用户明确进入实操时，先确认真实 Namespace、对象名称和状态，再决定练习或故障定位范围；lab-web 的 NotFound 与“只看到一个 Pod”都需实际证据。命令说明执行位置、用途和预期结果，由用户亲手执行；Linux 编辑默认 vim，事后补记输出和解释。
+3. Mac 仅书面复盘；回到 Windows 且用户明确进入实操时，先确认真实 Namespace、对象名称和状态，再决定练习或故障定位范围。lab-web 的 NotFound 与“只看到一个 Pod”都需实际证据；命令说明执行位置、用途和预期结果，由用户亲手执行，Linux 编辑默认 vim，事后补记输出和解释。

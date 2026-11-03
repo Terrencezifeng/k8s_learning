@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-02 用户已提交 P16–P18 全部六道场景题，逐项反馈见 4.28。2026-11-04 用户确认已读完上轮反馈，继续原有 R1–R3 书面复盘，见 4.29；三题仍待答。三类探针用途、Service 静态后端选择、退出按 Always 重启与退避等有书面正确证据；init 重试、Never、startup 门控、退出宽限期、TCP 检查、readiness 动态恢复、命令及 UID 区分已纠正／补充待验证。无本轮实操输出。实际学习时长未知，历史记录尚未归档。
+状态：2026-11-04 用户已提交 R1–R3 全部复盘答案，以最新完整提交为准，逐项反馈见 4.30。init 重试范围、Never 不重试、startup 门控、readiness 失败不直接重启与恢复接流量、describe／previous 日志命令及 UID 身份原则已有书面正确证据；Never 下 Pod 的 Failed 状态、实际读取 UID 的命令已纠正待确认。新增两个收尾小问 C1–C2 待答，不重复考已通过内容。退出宽限期、TCP 检查与配置交接等仍按既有状态保留；无本轮实操输出。实际学习时长未知，历史记录尚未归档。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -375,9 +375,29 @@
 - 核对来源：复用项目笔记，并重新查阅 [v1.22 探针文档](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)、[v1.22 Pod 生命周期](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/concepts/workloads/pods/pod-lifecycle.md)、[普通 init](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) 和 [kubectl logs 参数](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/)。没有重新下载视频、读取新字幕或查看新关键帧。
 - 当前状态：R1–R3 尚无本轮作答，既有正确证据与未验证项均保留；无集群连接、实验或新掌握证据。实际学习时长未知，继续暂存，不形成正式记录。
 
+### 4.30 2026-11-04：R1–R3 完整作答与两个收尾点
+
+- 来源：用户先发送未完成的 R3，随后补发完整 R1–R3；本轮以最新完整版本为准。原三题均已作答，不再记为待答；不因先前消息的空白或截断扣除后续补全的正确证据。
+
+| 小问 | 用户实际回答 | 核对与反馈 | 当前状态 |
+| --- | --- | --- | --- |
+| R1a | init-a 不重跑，只重跑 init-b；app 不能启动，因为 init 尚未按顺序全部运行完 | 本题排除节点／sandbox 重建，通常只重试失败的 init-b，app 仍被阻塞。规范表述为“所有普通 init 按顺序成功结束”，仅仅运行过不够 | 重试范围与 app 阻塞书面通过 |
+| R1b | Never 不重试，重启策略同样作用于 init；认为 Pod 和 app 未运行 | 不重试及策略作用范围正确；app 未启动正确。Pod 已有初始化执行过程，最终 phase 为 Failed，不能只称“Pod 未运行”或理解为一直等待；Pod 对象与 app 进程需区分 | 不重试与 app 结果通过；Failed 状态已纠正待 C1 确认 |
+| R2a | startup 成功前另外两类不执行 | 在已配置 startup 的本题中正确 | startup 门控书面通过 |
+| R2b | readiness 失败不直接触发重启；连续失败后 Pod 未就绪、不接流量，流量变为 0 | 本题达到失败阈值后，该 Pod 不再接收普通 Service 新流量，核心与因果正确。“0”需限定为该 Pod 的这条接流量路径；未提供其他后端情况，不能推断整个 Service 无流量，也不表示 Pod IP 被封锁或已有连接立即断开 | 核心书面通过；流量范围已补充，Service 总体无后端未获证据 |
+| R2c | 不需要重建，Pod 标记 Ready 即可 | 就绪检查满足恢复条件、Pod Ready 后，随状态同步重新获得接收新流量资格；不需重建的判断正确 | 书面通过；无真实访问实验 |
+| R3a | kubectl describe pod order-api-0 -n training-life | Pod 名、Namespace 和语法正确；目标为 Events 与对应容器 State／Last State、Reason、Exit Code | 新名称迁移书面通过，未执行 |
+| R3b | kubectl logs order-api-0 -n training-life -c server --previous --timestamps | 以最新完整提交为准，容器选择、上一实例与时间戳参数均正确 | 新名称迁移书面通过，未执行 |
+| R3c | 想用上述 describe 与 logs 检查 UID 变化，认为 UID 改变即 Pod 被重新创建 | 比较 Pod UID 的身份原则正确；标准 kubectl describe pod 输出不打印 metadata.uid，logs 是应用日志，不能据两者保证读取对象 UID。应使用 get pod -o yaml／json，或 JSONPath 读取 metadata.uid，再与此前同一 Namespace／名称的 UID 记录比较；只有当前 UID 不能凭空判定历史变化 | 身份原则通过；读取 UID 的命令已纠正待 C2 确认 |
+
+- 命令补充（仅书面说明，未执行）：`kubectl get pod order-api-0 -n training-life -o yaml` 可查看 `metadata.uid`；也可使用 `kubectl get pod order-api-0 -n training-life -o jsonpath='{.metadata.uid}'` 直接输出该字段。Pod 身份变化与同 Pod 的容器重启分别取证，不将 restartCount 单独当作 Pod 替换依据。
+- 核对来源：重新查阅 [官方普通 init](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)、[v1.22 探针文档](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)、[kubectl v0.22.2 describePod 实现](https://raw.githubusercontent.com/kubernetes/kubectl/v0.22.2/pkg/describe/describe.go)、[kubectl logs](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/)、[对象名称与 UID](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/) 及 [JSONPath](https://kubernetes.io/docs/reference/kubectl/jsonpath/)。以现有 v1.22.2 的普通 init 与基础探针为范围，没有引入新版原生 sidecar。
+- 两个收尾小问（C1–C2，均待答）：C1 复述本题 Never 下普通 init 失败后的 Pod phase 与 app 是否启动；C2 写出读取 training-life/order-api-0 的 Pod UID 的命令，并说明需要与什么记录比较。题末附对应空白模板，仅书面作答，不要求实际输出。
+- 课程位置仍为 P18；无集群连接、真实命令执行或新增实验。退出宽限期、TCP／HTTP 检查边界、配置交接等未被本轮覆盖的内容不自动通过。实际学习时长未知，继续暂存，不正式归档。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.28 的逐题反馈；用户于 2026-11-04 确认已读反馈，本轮接续见 4.29。原六题已全部提交，接收 R1–R3 的书面回答。保留历史正确证据和本轮迁移错误，按最新回答更新，不把原题重新记成未答。退出宽限期、TCP 等补充尚未验证。题目对象均为假设；此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.30 的最新反馈。原六题和 R1–R3 均已完整提交，接收收尾 C1（Never 下 Pod phase／app 状态）与 C2（读取 UID 的命令与比较依据）；不重考已通过的 R2 和 describe／logs 语法。退出宽限期、TCP 等补充尚未验证。题目对象均为假设；此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。Mac 仅书面复盘；实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
