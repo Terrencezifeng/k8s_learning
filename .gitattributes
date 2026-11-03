@@ -1,0 +1,9 @@
+*.sh text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.service text eol=lf
+*.png binary
+*.zip binary
+PACKAGE-MANIFEST.json -text
+logs/** -text

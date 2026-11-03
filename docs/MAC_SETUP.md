@@ -1,0 +1,106 @@
+# Mac 接续学习与项目同步
+
+整理日期：2026-11-03。仓库：[Terrencezifeng/k8s_learning](https://github.com/Terrencezifeng/k8s_learning)。用户已确认公司 Mac 用于阅读、讲解、笔记和书面考核；集群仅在 Windows 电脑的 VMware 中运行。
+
+## 1 第一次在 Mac 打开
+
+需要 Git、Python 3.9 或以上（运行同步脚本）、Markdown 阅读器，以及用于学习的 Codex。阅读已有资料不需要 Docker、kubectl、B 站登录或视频工具。
+
+在 **Mac 终端**执行，检查工具是否可用：
+
+```bash
+git --version
+python3 --version
+```
+
+预期分别显示 Git 版本和 Python 3.9+。若未安装，通过公司的软件安装方式补齐；Git 可来自 Apple Command Line Tools，Python 可从 [Python 官方 macOS 下载页](https://www.python.org/downloads/macos/)安装。本项目同步脚本只使用标准库，不需要 pip 安装依赖。
+
+在 **Mac 终端**克隆项目：
+
+```bash
+mkdir -p ~/Projects
+cd ~/Projects
+git clone https://github.com/Terrencezifeng/k8s_learning.git
+cd k8s_learning
+git status -sb
+```
+
+预期得到 `~/Projects/k8s_learning`，当前分支为 `main`，跟踪 `origin/main`。目录已存在时进入原目录并按同步说明更新，不要在其中再次克隆。
+
+用 Codex 打开整个 `k8s_learning` 文件夹，使根目录的 `AGENTS.md` 成为项目规则入口；Typora 可打开 `README.md` 或 `docs/learning/PROGRESS.md`。规则和学习上下文以仓库文件为准，不依赖原电脑中的聊天记录。项目规则的加载方式参考 [OpenAI 官方说明](https://learn.chatgpt.com/docs/customization/overview)。
+
+## 2 配置一次 GitHub 推送登录
+
+公开仓库允许匿名克隆，但自动推送需要在 Mac 单独登录有写入权限的 GitHub 账户。本机现有 GitHub 认证不会随仓库复制。
+
+若已经安装 GitHub CLI，在 **Mac 终端**执行：
+
+```bash
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git --hostname github.com
+```
+
+按浏览器提示登录 `Terrencezifeng` 或已获仓库写权限的账户。没有 `gh` 时可按 [GitHub CLI 官方安装说明](https://cli.github.com/)安装，或沿用公司允许的 Git 凭据管理工具。同步脚本不接收 Token 参数，也不自动打开登录页面。命令依据：[登录说明](https://cli.github.com/manual/gh_auth_login)、[Git 凭据配置](https://cli.github.com/manual/gh_auth_setup-git)。
+
+为此仓库设置提交身份（只影响当前仓库）：
+
+```bash
+git config user.name "Terrencezifeng"
+git config user.email "89788335+Terrencezifeng@users.noreply.github.com"
+python3 scripts/learning_sync.py pull
+python3 scripts/learning_sync.py push
+```
+
+预期显示 `Pull complete` 和 `Push complete`。没有文件变化时不会创建空提交；第二条同步命令可检查推送权限。若出现 `SYNC STOPPED`，按 [同步说明](SYNC_WORKFLOW.md) 处理，不能据此认为已经同步成功。
+
+## 3 给新学习会话的上下文
+
+可直接将下面内容发给 Mac 上此项目中的 Codex：
+
+```text
+这是我从 Windows 同步来的 K8s 入门项目，目前在公司 Mac 上。
+请遵守 AGENTS.md，先用 python3 scripts/learning_sync.py pull 更新，
+成功后重新读取 AGENTS.md、README.md、PLAN.md、docs/MAC_SETUP.md，
+以及 docs/learning/PROFILE.md、PROGRESS.md、PENDING.md。
+Mac 只用于讲解、阅读和书面考核，不连接集群，不布置需要实际集群的操作，
+也不要求我启动虚拟机或提供集群实时输出。命令可以作为书面推演，但标明未执行。
+依据文件中的最新证据接续，不把已经提交的六道生命周期题当成未答。
+每次更新学习记录后自动运行 python3 scripts/learning_sync.py push，
+失败时保留本地内容并说明原因。考题最后附可填写的空白模板。
+```
+
+Git 同步的是文件和提交；Windows 的聊天会话、GitHub 登录、全局 skills 和 MCP 注册不由此迁移。
+
+## 4 当前接续点与证据入口
+
+这是截至 **2026-11-02** 的迁移快照，之后始终以拉取后的 [PROGRESS.md](learning/PROGRESS.md) 为准。
+
+| 项目 | 接续信息 |
+| --- | --- |
+| 用户基础 | 一年运维经验，熟悉 Linux、Docker 和部分脚本；类比以 infra 运维为主 |
+| 已学位置 | 用户已报告学到 P18；P19 以后尚未报告已学 |
+| 当前待答 | PENDING.md 的 4.28：R1 普通 init 重试与 Never；R2 startup 门控和 readiness 失败恢复；R3 describe/logs 对象定位与 Pod UID |
+| 已有实践 | 四轮基础实验及清理已按指导亲手完成；本轮生命周期考核仅有书面证据 |
+| 视频准备 | 助手预习已覆盖至 P25，已有笔记和 12 张教学图片；预习不等于用户掌握 |
+| 学习时长 | 未知；不要把迁移、下载和同步耗时记作学习时间 |
+
+重点阅读 [学习画像](learning/PROFILE.md)、[进度与掌握证据](learning/PROGRESS.md)、[原始问答暂存](learning/PENDING.md)、[P14–P25 资料索引](learning/video-notes/P014-P025-预习索引.md)。后续仍采用原理、运维类比、书面推演与复盘，保留未验证项。
+
+## 5 Mac 的操作边界
+
+- Mac 不安装或重建本项目集群，不调用 SSH/MCP/kubectl 去访问 VMware，不探测节点和 Dashboard，不要求用户进行实时集群实操。
+- 可讲解命令、审阅 YAML、模拟输出和书面排障；示例必须注明假设，不能记录成真实运行结果。需要真实环境验证的点先记入待验证事项，回到 Windows 且用户明确进入实操时再开展。
+- [集群交接说明](CLUSTER_CONTEXT.md) 内的 Windows 路径、私网 IP 和历史验收状态仅作背景。Mac 克隆后不会得到 VMware、SSH 密钥、kubeconfig 或原 SSH MCP。
+- `scripts/k8s-time-sync.sh` 和 `.service` 属于 CentOS 7 虚拟机的历史维护脚本，不在 Mac 执行。`scripts/learning_sync.py` 才是本机跨设备同步入口。
+
+## 6 视频工具与未同步的资料
+
+已有 Markdown 笔记、问答和必要教学图片随仓库同步，可以直接阅读。`.local/` 中的 B 站 Cookie、二维码、字幕、下载视频、Python 依赖和临时兼容脚本不上传；Windows 的登录状态和 Python 二进制包不能作为 Mac 安装包。
+
+如以后在 Mac 获取新视频资料，先读取 [VIDEO_WORKFLOW.md](learning/VIDEO_WORKFLOW.md)。需要独立安装用户指定的 [bilibili-obsidian-notes](https://github.com/le876/bilibili-obsidian-notes) skill，并按当时环境建立依赖和扫码登录。已知原始扫码脚本存在 Cookie 保留兼容问题；文中 `.local/` 辅助脚本属于原 Windows 本地文件，不应在 Mac 假定其存在。当前范围无需重新拉字幕或安装这些工具。
+
+项目规则已在 `AGENTS.md` 中。未安装 `grill-me` 或视频 skill 不影响阅读现有笔记；需使用某技能时先查本机可用列表，再按 [OpenAI 技能安装说明](https://learn.chatgpt.com/docs/build-skills)配置，不照抄 Windows 的绝对路径。
+
+## 7 日常切换电脑
+
+同步的完整时机、范围、冲突处理和验证方法见 [SYNC_WORKFLOW.md](SYNC_WORKFLOW.md)。每次换电脑前，确认上一台会话已经提示推送成功；下一台会话开始自动拉取。Typora 在会话外的修改需先保存，再进入 Codex 会话处理，或手动执行同步脚本。没有后台定时任务。

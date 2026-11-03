@@ -1,0 +1,968 @@
+Kubernetes 集群 Debug 日志
+记录日期：2026-10-28
+时区：Asia/Shanghai（UTC+8）；原始命令输出中的 UTC 时间保留原样。
+事件：恢复 VMware 测试环境中的 1 Master + 2 Worker Kubernetes 集群。
+状态时点：本次修复结束时的验收结果。
+数据来源：本次 SSH/MCP 操作记录及 k8s-repair-20261028.log。
+文档结构：中文分析记录 + 原始修复命令和输出附录。
+
+[01] 处理结果
+
+结果：修复完成，3 个节点全部 Ready，已部署的 Pod 全部 Running。
+
+节点       SSH 别名   IP               角色                    Kubernetes
+master     vm01       192.168.169.3    control-plane,master    v1.22.2
+node1      node1      192.168.169.4    worker                  v1.22.2
+node2      node2      192.168.169.5    worker                  v1.22.2
+
+环境：CentOS Linux 7，内核 3.10.0-1160.el7.x86_64，containerd 1.5.5。
+运行时接口：unix:///run/containerd/containerd.sock。
+Pod 网段：10.244.0.0/16；Service 网段：10.96.0.0/12。
+节点 PodCIDR：master=10.244.0.0/24，node1=10.244.1.0/24，node2=10.244.2.0/24。
+集群 DNS：10.96.0.10；域名后缀：cluster.local。
+
+用户授权：直接修复测试集群，明确跳过 etcd 和配置备份。
+本次保留已有 etcd 数据和集群身份，通过证书、网络及运行时配置修复恢复集群。
+实际操作以 SSH MCP 为主；节点凭据使用已验证的 SSH 连接在进程内存中传输。
+日志不包含 SSH 私钥、kubeconfig 内嵌私钥、登录密码或 Dashboard 登录 Token。
+
+[02] 初始故障与因果关系
+
+故障 A：API Server 不可用。
+证据：6443 连接被拒绝；kube-apiserver 反复退出；日志出现证书过期和访问 etcd 失败。
+根因：控制平面证书已于 2026-06-21 到期，API Server 无法通过 TLS 正常访问 etcd。
+补充：etcd 进程仍在运行；CA 有效期到 2035 年，CA 私钥存在，可以沿用原 CA 续签。
+
+故障 B：node1、node2 的 kubelet 反复退出。
+关键报错：
+  part of existing bootstrap client certificate in /etc/kubernetes/kubelet.conf is expired
+  unable to load bootstrap kubeconfig: stat /etc/kubernetes/bootstrap-kubelet.conf: no such file
+根因：两个 worker 的客户端证书过期，又缺少可用于重新引导的 bootstrap kubeconfig。
+补充：master 的 kubelet 客户端证书仍有效，因此没有重签该证书。
+
+故障 C：节点 Ready，但 Pod 网络不符合 Flannel 配置。
+证据：原 CoreDNS 等 Pod 地址为 10.88.0.x；节点分配的 PodCIDR 却为 10.244.x.0/24。
+根因：containerd 的 max_conf_num=1，优先加载 10-containerd-net.conflist；
+      该文件配置了独立的 10.88.0.0/16 bridge 网络，抢先于 Flannel 配置生效。
+同时发现：master 缺少 Flannel CNI 配置；原 Flannel DaemonSet 缺少 install-cni 初始化容器。
+结论：Ready 只能证明节点满足就绪条件，不能替代跨节点 Pod 网络验收。
+
+故障 D：清理旧 Pod 网络失败。
+关键报错：
+  failed to remove netns: unlinkat /run/netns/cni-...: device or resource busy
+证据：检查 /proc/<PID>/mountinfo，发现 flanneld 持有该旧网络命名空间的挂载引用。
+根因：旧 Flannel 配置将整个宿主机 /run 挂入容器，保留了不应保留的命名空间挂载。
+
+故障 E：运行时重启时触发 systemd 启动超时。
+证据：node1 的 containerd 记录 successfully booted in 100.041069s；
+      systemd 当时 TimeoutStartUSec=1min 30s，随后报告启动失败。
+判断：本次恢复旧容器运行时状态耗时超过原 90 秒限制；日志最后停留在 runtime.v2.task 加载阶段。
+边界：本次未进一步定位该旧版本运行时恢复缓慢的内部实现原因。
+
+故障 F：Nginx、Dashboard 镜像无法启动。
+第一层原因：containerd 的 HTTP_PROXY/HTTPS_PROXY 指向不可达的 192.168.169.1:7890。
+代理移除后继续确认：
+  Nginx：daocloud.io/library/nginx:latest 返回 not found。
+  Dashboard：imagePullPolicy=Always，虽然本地已有 v2.3.1，仍访问不可达的外部镜像端点。
+
+[03] 控制平面证书修复
+
+执行节点：master。
+执行的主要命令：
+
+  kubeadm certs renew all
+  install -d -m 700 /root/.kube
+  install -m 600 /etc/kubernetes/admin.conf /root/.kube/config
+  kubeadm certs check-expiration
+
+结果：admin.conf、apiserver、apiserver-etcd-client、apiserver-kubelet-client、
+controller-manager.conf、etcd-healthcheck-client、etcd-peer、etcd-server、
+front-proxy-client、scheduler.conf 均续签成功。
+续签后有效期：2027-10-27 16:08 UTC，即北京时间 2027-10-28 00:08 左右。
+
+随后通过 crictl 停止正在运行的 etcd、API Server、controller-manager、scheduler 容器，
+并重启 kubelet，由静态 Pod 机制重建控制平面容器，加载新证书。
+
+第一次在重启约 8 秒后检查 /readyz，informer-sync 等初始化检查未完成，返回非零状态。
+后续检查全部通过，master 恢复 Ready。该首次失败属于启动过程中的暂态结果。
+
+[04] Worker 证书和自动轮换修复
+
+处理节点：node1、node2。
+处理流程：
+  1. 从原集群读取 kubeadm ClusterConfiguration。
+  2. 在 master 上使用原 CA 签发 system:node:node1、system:node:node2 客户端凭据。
+  3. 生成的 kubeconfig 指向 https://192.168.169.3:6443。
+  4. 通过 SSH 内存流交付到对应节点；停止 kubelet，替换过期凭据，再启动 kubelet。
+  5. 等待 kubelet-client-current.pem 重新生成。
+  6. 将 kubelet.conf 改回引用轮换证书文件，避免长期依赖内嵌的固定证书。
+
+实际恢复的配置引用：
+  client-certificate: /var/lib/kubelet/pki/kubelet-client-current.pem
+  client-key: /var/lib/kubelet/pki/kubelet-client-current.pem
+
+关键命令，以 node1 为例（node2 使用自己的节点名）：
+
+  kubectl config set-credentials system:node:node1 \
+    --kubeconfig=/etc/kubernetes/kubelet.conf \
+    --client-certificate=/var/lib/kubelet/pki/kubelet-client-current.pem \
+    --client-key=/var/lib/kubelet/pki/kubelet-client-current.pem \
+    --embed-certs=false
+  install -d -m 755 /etc/kubernetes/manifests
+  systemctl restart kubelet
+
+结果：两个 worker 恢复 Ready；对应 CSR 为 Approved,Issued。
+所有节点最终确认 rotateCertificates: true，kubelet.conf 引用轮换证书文件。
+创建 worker 的空 manifests 目录，同时消除了 kubelet 因目录缺失产生的重复错误日志。
+
+[05] Flannel/CNI 网络修复
+
+集群侧变更：
+  - 修正 kube-system/kube-flannel-cfg 的 cni-conf.json，使用 flannel + portmap。
+  - 移除旧配置中的自定义固定端口 ranges，恢复标准 CNI 配置结构。
+  - 为 kube-flannel-ds 补齐 install-cni 初始化容器。
+  - 初始化容器把 cni-conf.json 复制为 /etc/cni/net.d/10-flannel.conflist。
+  - 将 Flannel 的宿主机 /run 挂载收窄为 /run/flannel，并完成滚动更新。
+
+节点侧迁移顺序：
+  1. 确认 Flannel 配置和插件文件存在。
+  2. 暂停 kubelet，避免迁移过程中同时创建新 Pod 网络。
+  3. 通过 CRI 检查 sandbox 的 network 模式，只停止使用 POD 网络的 sandbox。
+  4. 在旧 Pod 网络释放后删除旧 cni0 网桥。
+  5. 删除明确冲突的 /etc/cni/net.d/10-containerd-net.conflist。
+  6. 恢复 containerd、kubelet，让 Pod 使用 Flannel 网络重建。
+
+重要排障记录：
+  node1 首次迁移在 crictl stopp 阶段遇到 device or resource busy。
+  检查发现 flanneld 持有旧挂载后，修正其 /run 挂载范围，再继续迁移。
+  没有仅通过反复删除命名空间文件来掩盖问题。
+
+最终状态：所有节点 /etc/cni/net.d 只保留 10-flannel.conflist。
+示例地址：CoreDNS=10.244.0.2/10.244.0.3，Nginx=10.244.2.2，Dashboard=10.244.2.3。
+这些地址是验收时的 Pod 地址，Pod 重建后可能变化。
+
+[06] containerd 代理与启动超时修复
+
+代理文件：/etc/systemd/system/containerd.service.d/http-proxy.conf。
+修复动作：清空指向 http://192.168.169.1:7890 的 HTTP_PROXY 和 HTTPS_PROXY 值。
+验证依据：去掉代理后能直接连接阿里云镜像仓库；实际 crictl pull Nginx 成功。
+说明：镜像仓库 /v2/ 探测返回 401 是该探测中的认证挑战，实际拉取成功才作为最终验证。
+
+在三个节点增加启动等待配置：
+文件：/etc/systemd/system/containerd.service.d/startup-timeout.conf
+
+  [Service]
+  TimeoutStartSec=300
+
+随后执行 systemctl daemon-reload，并恢复/重启 containerd。
+最终确认三个节点的 TimeoutStartUSec=5min，containerd 和 kubelet 均 active、enabled。
+
+工具超时记录：
+  node1 有一次 SSH/MCP 调用在 50 秒超时，但远程启动任务仍继续执行。
+  后续先检查 systemctl list-jobs、进程和 journal，再处理 systemd 的启动超时。
+  因此，调用 timed_out=true 不等于远程命令已停止，不能据此盲目重复有副作用的操作。
+
+[07] 恢复现有 Nginx 和 Dashboard
+
+Nginx 原镜像：daocloud.io/library/nginx（隐式 latest）。
+修复后的镜像：
+  registry.aliyuncs.com/k8sxio/nginx@sha256:f49a843c290594dcf4d193535d1f4ba8af7d56cea2cf79d1e9554f077f1e7aaa
+拉取策略：IfNotPresent。
+依据：该镜像已存在于 master，且在 worker 上实际拉取成功；使用摘要固定此次内容。
+
+Dashboard 镜像保持 docker.io/kubernetesui/dashboard:v2.3.1。
+变更：imagePullPolicy 从 Always 改为 IfNotPresent，使用节点已缓存的同版本镜像。
+
+结果：Nginx Deployment 和 Dashboard Deployment 的 rollout status 均成功。
+Dashboard 的恢复依赖现有缓存；本次没有验证从 Docker Hub 全新拉取该镜像的能力。
+
+[08] 验收记录
+
+临时命名空间：codex-check-20261028-0027。
+通过 nodeSelector 分别在 master、node1、node2 调度测试 Pod；未挂载 ServiceAccount Token。
+
+测试 Pod         所在节点   验收时 IP
+check-master     master     10.244.0.7
+check-node1      node1      10.244.1.3
+check-node2      node2      10.244.2.4
+
+跨节点网络：6 个方向全部成功，每个方向发送 2 个 ICMP 包，均为 0% 丢包。
+  master -> node1    通过
+  master -> node2    通过
+  node1  -> master   通过
+  node1  -> node2    通过
+  node2  -> master   通过
+  node2  -> node1    通过
+
+DNS 与 Service：
+  - 三台节点上的测试 Pod 均成功解析 kubernetes.default.svc.cluster.local -> 10.96.0.1。
+  - 均成功解析 nginx.default.svc.cluster.local -> 10.109.7.172。
+  - 均成功访问 Nginx Service，并检查到 Welcome to nginx 响应内容。
+  - 初次 nslookup 同时查询地址类型时包含 No answer；随后显式使用 -type=A，三处均成功。
+  - 本次验收针对 IPv4 集群 DNS，未据此声称 IPv6 或外部域名解析已验证。
+
+etcd：
+  https://127.0.0.1:2379 is healthy: successfully committed proposal
+  当次耗时：13.923667ms。
+
+API Server：
+  kubectl get --raw='/readyz?verbose'
+  所有检查为 ok；最终输出 readyz check passed。
+
+组件                       验收结果
+Flannel DaemonSet           3/3 Ready
+kube-proxy DaemonSet        3/3 Ready
+CoreDNS Deployment         2/2 Ready
+Nginx Deployment           1/1 Ready
+Dashboard Deployment       1/1 Ready
+dashboard-metrics-scraper   1/1 Ready
+
+节点条件：三个节点均 Ready=True，NetworkUnavailable=False，
+MemoryPressure=False，DiskPressure=False，PIDPressure=False。
+
+HTTP 检查（从 master 发起）：
+  http://192.168.169.3:30255     200
+  http://192.168.169.4:30255     200
+  http://192.168.169.5:30255     200
+  https://192.168.169.3:32320    200
+
+Dashboard HTTPS 探测使用 curl -k，仅验证 HTTP 响应，未验证浏览器证书信任或登录授权流程。
+测试结束已删除临时命名空间及其 3 个测试 Pod，随后再次确认集群业务和系统 Pod 全部 Running。
+
+[09] 调试命令中的兼容性问题
+
+问题：etcd 容器内执行 env ETCDCTL_API=3 etcdctl 时返回 env: executable file not found。
+处理：直接执行 etcdctl 并携带 endpoint、CA、客户端证书和私钥路径，endpoint health 成功。
+结论：这是容器工具缺失导致的检查命令失败，并非 etcd 再次故障。
+
+问题：此 CentOS 7 环境的 systemctl 不支持 --value。
+处理：使用 systemctl show -p MainPID containerd | cut -d= -f2 读取 PID。
+
+完整原始记录保留了暂态检查失败和命令兼容性错误；最终结论以随后成功的验收结果为准。
+
+[10] 交付状态与后续排查入口
+
+保留版本：Kubernetes v1.22.2，containerd 1.5.5，Flannel v0.15.0。
+本次为原集群修复，没有执行 Kubernetes 版本升级。
+控制平面证书续签后的到期时间为北京时间 2027-10-28；kubelet 自动轮换已恢复。
+kubelet 自动轮换不等于控制平面证书也会自动续期；本次未新增控制平面自动续签任务。
+验收时 master 可用内存约 796 MiB，node1 约 354 MiB，node2 约 331 MiB。
+该资源记录为当时快照；更大负载的容量、长期稳定性及整机重启恢复不在本次验收范围内。
+
+后续只读检查命令（集群命令在 master 执行）：
+
+  kubectl get nodes -o wide
+  kubectl get pods -A -o wide
+  kubectl get ds,deploy -A
+  kubectl get --raw='/readyz?verbose'
+  kubeadm certs check-expiration
+  kubectl get events -A --sort-by=.lastTimestamp
+
+各节点本机检查：
+
+  systemctl status kubelet containerd --no-pager
+  journalctl -u kubelet --since '30 minutes ago' --no-pager
+  journalctl -u containerd --since '30 minutes ago' --no-pager
+  crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps -a
+  ls -l /etc/cni/net.d
+  ip -4 address show cni0
+  ip -4 route
+
+如需人工查看或编辑配置，使用 vim，例如：
+  vim /etc/systemd/system/containerd.service.d/startup-timeout.conf
+
+以上为事后 Debug 记录。修复命令具有上下文和执行顺序，不能将整份日志当作脚本重复执行。
+
+================ 原始执行记录附录 ================
+后续内容原样附入现有 k8s-repair-20261028.log，保留成功、失败和重试输出。
+该原始日志包含主要修复及验收记录；中文分析还引用了本会话中未单独写入原日志的诊断输出。
+
+[原始记录文件] k8s-repair-20261028.log
+[原始记录 SHA-256] 2CAF323E7BFC7D3FBD000C3B27490A2AEE17A0CB7A89B90B3C649D7FF2B2F0FB
+
+Kubernetes repair - 2026-10-28
+Target: master 192.168.169.3, node1 192.168.169.4, node2 192.168.169.5
+User authorization: repair test cluster directly; skip etcd/config backups.
+Acceptance: 1 control-plane + 2 workers Ready; API healthy; CoreDNS/CNI/kube-proxy healthy; cross-node networking and DNS verified.
+
+Known failure:
+- Kubernetes v1.22.2 with containerd on all hosts.
+- Control-plane certificates and worker kubelet certificates expired on 2026-06-21.
+- API server exits because TLS authentication to etcd fails.
+- Worker kubelets restart because their certificates expired and bootstrap kubeconfig is absent.
+
+Step 1: Inspect certificate profiles and restore control-plane credentials.
+
+[master] Renew control-plane certificates
+COMMAND:
+set -e
+kubeadm certs renew all
+install -d -m 700 /root/.kube
+install -m 600 /etc/kubernetes/admin.conf /root/.kube/config
+kubeadm certs check-expiration
+RESULT:
+[renew] Reading configuration from the cluster...
+[renew] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -o yaml'
+[renew] Error reading configuration from the Cluster. Falling back to default configuration
+
+certificate embedded in the kubeconfig file for the admin to use and for kubeadm itself renewed
+certificate for serving the Kubernetes API renewed
+certificate the apiserver uses to access etcd renewed
+certificate for the API server to connect to kubelet renewed
+certificate embedded in the kubeconfig file for the controller manager to use renewed
+certificate for liveness probes to healthcheck etcd renewed
+certificate for etcd nodes to communicate with each other renewed
+certificate for serving etcd renewed
+certificate for the front proxy client renewed
+certificate embedded in the kubeconfig file for the scheduler manager to use renewed
+
+Done renewing certificates. You must restart the kube-apiserver, kube-controller-manager, kube-scheduler and etcd, so that they can use the new certificates.
+[check-expiration] Reading configuration from the cluster...
+[check-expiration] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -o yaml'
+[check-expiration] Error reading configuration from the Cluster. Falling back to default configuration
+
+CERTIFICATE                EXPIRES                  RESIDUAL TIME   CERTIFICATE AUTHORITY   EXTERNALLY MANAGED
+admin.conf                 Oct 27, 2027 16:08 UTC   364d                                    no      
+apiserver                  Oct 27, 2027 16:08 UTC   364d            ca                      no      
+apiserver-etcd-client      Oct 27, 2027 16:08 UTC   364d            etcd-ca                 no      
+apiserver-kubelet-client   Oct 27, 2027 16:08 UTC   364d            ca                      no      
+controller-manager.conf    Oct 27, 2027 16:08 UTC   364d                                    no      
+etcd-healthcheck-client    Oct 27, 2027 16:08 UTC   364d            etcd-ca                 no      
+etcd-peer                  Oct 27, 2027 16:08 UTC   364d            etcd-ca                 no      
+etcd-server                Oct 27, 2027 16:08 UTC   364d            etcd-ca                 no      
+front-proxy-client         Oct 27, 2027 16:08 UTC   364d            front-proxy-ca          no      
+scheduler.conf             Oct 27, 2027 16:08 UTC   364d                                    no      
+
+CERTIFICATE AUTHORITY   EXPIRES                  RESIDUAL TIME   EXTERNALLY MANAGED
+ca                      Jun 19, 2035 14:34 UTC   8y              no      
+etcd-ca                 Jun 19, 2035 14:34 UTC   8y              no      
+front-proxy-ca          Jun 19, 2035 14:34 UTC   8y              no      
+
+Exit: 0
+
+[master] Restart control-plane containers; check API readiness
+COMMAND:
+set -e
+for component in etcd kube-apiserver kube-controller-manager kube-scheduler; do
+  container_ids=$(crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps --name "$component" -q)
+  if [ -n "$container_ids" ]; then
+    printf 'Restarting %s\n' "$component"
+    crictl --runtime-endpoint unix:///run/containerd/containerd.sock stop $container_ids
+  fi
+done
+systemctl restart kubelet
+systemctl is-active kubelet
+sleep 8
+crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps
+kubectl --request-timeout=8s get --raw='/readyz?verbose' 2>&1
+RESULT:
+Restarting etcd
+044d6be62bddf8673a9beb36c2d5d15e0557ad81bec43261043f45f8bc35ca2b
+Restarting kube-controller-manager
+bae570fe09d5f7111c792510f40da0ffa13605921b77a6ee1e2acf3dc5204df6
+Restarting kube-scheduler
+d9c87b5235bba65b15d13104d23635bda58554f347c686982ab6aab34bfda3f8
+active
+CONTAINER           IMAGE               CREATED             STATE               NAME                      ATTEMPT             POD ID
+9f07cf6c0d3bb       b51ddc1014b04       2 seconds ago       Running             kube-scheduler            14                  fe1d291563eb7
+3d3dd07c5ddcf       e64579b7d8862       2 seconds ago       Running             kube-apiserver            32                  b69e209356eba
+10475a2c77417       5425bcbd23c54       2 seconds ago       Running             kube-controller-manager   12                  d3b409ec5cd43
+ab5c8976903ef       0048118155842       8 seconds ago       Running             etcd                      14                  2ad33c6301c42
+Error from server (InternalError): an error on the server ("[+]ping ok\n[+]log ok\n[+]etcd ok\n[-]informer-sync failed: reason withheld\n[+]poststarthook/start-kube-apiserver-admission-initializer ok\n[+]poststarthook/generic-apiserver-start-informers ok\n[+]poststarthook/priority-and-fairness-config-consumer ok\n[+]poststarthook/priority-and-fairness-filter ok\n[+]poststarthook/start-apiextensions-informers ok\n[-]poststarthook/start-apiextensions-controllers failed: reason withheld\n[-]poststarthook/crd-informer-synced failed: reason withheld\n[-]poststarthook/bootstrap-controller failed: reason withheld\n[-]poststarthook/rbac/bootstrap-roles failed: reason withheld\n[-]poststarthook/scheduling/bootstrap-system-priority-classes failed: reason withheld\n[-]poststarthook/priority-and-fairness-config-producer failed: reason withheld\n[+]poststarthook/start-cluster-authentication-info-controller ok\n[+]poststarthook/aggregator-reload-proxy-client-cert ok\n[+]poststarthook/start-kube-aggregator-informers ok\n[-]poststarthook/apiservice-registration-controller failed: reason withheld\n[+]poststarthook/apiservice-status-available-controller ok\n[+]poststarthook/kube-apiserver-autoregistration ok\n[-]autoregister-completion failed: reason withheld\n[+]poststarthook/apiservice-openapi-controller ok\n[+]shutdown ok\nreadyz check failed") has prevented the request from succeeding
+
+Exit: 1
+
+[node1] New node credential signed by existing cluster CA, delivered through SSH memory stream; expired kubelet client files removed; kubelet restarted.
+active
+
+
+[node2] New node credential signed by existing cluster CA, delivered through SSH memory stream; expired kubelet client files removed; kubelet restarted.
+active
+
+
+[node1] Restore rotating certificate references
+set -e
+test -s /var/lib/kubelet/pki/kubelet-client-current.pem
+kubectl config set-credentials system:node:node1 --kubeconfig=/etc/kubernetes/kubelet.conf --client-certificate=/var/lib/kubelet/pki/kubelet-client-current.pem --client-key=/var/lib/kubelet/pki/kubelet-client-current.pem --embed-certs=false
+install -d -m 755 /etc/kubernetes/manifests
+systemctl restart kubelet
+systemctl is-active kubelet
+grep -E 'client-certificate:|client-key:' /etc/kubernetes/kubelet.conf
+User "system:node:node1" set.
+active
+    client-certificate: /var/lib/kubelet/pki/kubelet-client-current.pem
+    client-key: /var/lib/kubelet/pki/kubelet-client-current.pem
+
+
+[node2] Restore rotating certificate references
+set -e
+test -s /var/lib/kubelet/pki/kubelet-client-current.pem
+kubectl config set-credentials system:node:node2 --kubeconfig=/etc/kubernetes/kubelet.conf --client-certificate=/var/lib/kubelet/pki/kubelet-client-current.pem --client-key=/var/lib/kubelet/pki/kubelet-client-current.pem --embed-certs=false
+install -d -m 755 /etc/kubernetes/manifests
+systemctl restart kubelet
+systemctl is-active kubelet
+grep -E 'client-certificate:|client-key:' /etc/kubernetes/kubelet.conf
+User "system:node:node2" set.
+active
+    client-certificate: /var/lib/kubelet/pki/kubelet-client-current.pem
+    client-key: /var/lib/kubelet/pki/kubelet-client-current.pem
+
+
+[master] Restore Flannel CNI installer and configuration; label worker nodes
+set -e
+kubectl -n kube-system patch cm kube-flannel-cfg --type merge -p '{"data":{"cni-conf.json":"{\n  \"name\": \"cbr0\",\n  \"cniVersion\": \"0.3.1\",\n  \"plugins\": [\n    {\n      \"type\": \"flannel\",\n      \"delegate\": {\n        \"hairpinMode\": true,\n        \"isDefaultGateway\": true\n      }\n    },\n    {\n      \"type\": \"portmap\",\n      \"capabilities\": {\n        \"portMappings\": true\n      }\n    }\n  ]\n}\n"}}'
+kubectl -n kube-system patch ds kube-flannel-ds --type strategic -p '{"spec":{"template":{"spec":{"initContainers":[{"name":"install-cni","image":"quay.io/coreos/flannel:v0.15.0","imagePullPolicy":"IfNotPresent","command":["cp"],"args":["-f","/etc/kube-flannel/cni-conf.json","/etc/cni/net.d/10-flannel.conflist"],"volumeMounts":[{"name":"cni","mountPath":"/etc/cni/net.d"},{"name":"flannel-cfg","mountPath":"/etc/kube-flannel/"}]}]}}}}'
+kubectl label nodes node1 node2 node-role.kubernetes.io/worker= --overwrite
+kubectl -n kube-system rollout status ds/kube-flannel-ds --timeout=40s
+configmap/kube-flannel-cfg patched
+daemonset.apps/kube-flannel-ds patched
+node/node1 labeled
+node/node2 labeled
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 0 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 0 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 1 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 1 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 1 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 2 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 2 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 2 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 2 of 3 updated pods are available...
+daemon set "kube-flannel-ds" successfully rolled out
+
+
+[node2] Migrate pod networking to Flannel
+set -e
+test -s /etc/cni/net.d/10-flannel.conflist
+test -x /opt/cni/bin/flannel
+systemctl stop kubelet
+trap 'systemctl start kubelet' EXIT
+python - <<'PY'
+import json, subprocess
+cri = ['crictl', '--runtime-endpoint', 'unix:///run/containerd/containerd.sock']
+pods = json.loads(subprocess.check_output(cri + ['pods','--state','Ready','-o','json'])).get('items',[])
+for pod in pods:
+    detail = json.loads(subprocess.check_output(cri + ['inspectp',pod['id']]))
+    mode = detail['status']['linux']['namespaces']['options']['network']
+    if mode == 'POD':
+        print('Recreate pod network: ' + pod['metadata']['namespace'] + '/' + pod['metadata']['name'])
+        subprocess.check_call(cri + ['stopp',pod['id']])
+    elif mode != 'NODE':
+        raise RuntimeError('Unexpected network mode: ' + str(mode))
+PY
+if ip link show cni0 >/dev/null 2>&1; then
+  ip link delete cni0
+fi
+rm -f /etc/cni/net.d/10-containerd-net.conflist
+chown root:root /etc/cni/net.d /etc/cni/net.d/10-flannel.conflist
+chmod 755 /etc/cni/net.d
+chmod 644 /etc/cni/net.d/10-flannel.conflist
+systemctl restart containerd
+systemctl start kubelet
+trap - EXIT
+systemctl is-active containerd kubelet
+ls -l /etc/cni/net.d
+
+active
+active
+总用量 4
+-rw-r--r-- 1 root root 292 10月 28 00:18 10-flannel.conflist
+
+
+[node1] Migrate pod networking to Flannel
+set -e
+test -s /etc/cni/net.d/10-flannel.conflist
+test -x /opt/cni/bin/flannel
+systemctl stop kubelet
+trap 'systemctl start kubelet' EXIT
+python - <<'PY'
+import json, subprocess
+cri = ['crictl', '--runtime-endpoint', 'unix:///run/containerd/containerd.sock']
+pods = json.loads(subprocess.check_output(cri + ['pods','--state','Ready','-o','json'])).get('items',[])
+for pod in pods:
+    detail = json.loads(subprocess.check_output(cri + ['inspectp',pod['id']]))
+    mode = detail['status']['linux']['namespaces']['options']['network']
+    if mode == 'POD':
+        print('Recreate pod network: ' + pod['metadata']['namespace'] + '/' + pod['metadata']['name'])
+        subprocess.check_call(cri + ['stopp',pod['id']])
+    elif mode != 'NODE':
+        raise RuntimeError('Unexpected network mode: ' + str(mode))
+PY
+if ip link show cni0 >/dev/null 2>&1; then
+  ip link delete cni0
+fi
+rm -f /etc/cni/net.d/10-containerd-net.conflist
+chown root:root /etc/cni/net.d /etc/cni/net.d/10-flannel.conflist
+chmod 755 /etc/cni/net.d
+chmod 644 /etc/cni/net.d/10-flannel.conflist
+systemctl restart containerd
+systemctl start kubelet
+trap - EXIT
+systemctl is-active containerd kubelet
+ls -l /etc/cni/net.d
+
+Recreate pod network: default/nginx-847bc9794-tkmfg
+time="2026-10-28T00:19:28+08:00" level=fatal msg="stopping the pod sandbox \"d0a7fef3c0ab99ac2a60faf709a36b687dc0ccf02cb1250589db513cf8f3a3d9\": rpc error: code = Unknown desc = failed to remove network namespace for sandbox \"d0a7fef3c0ab99ac2a60faf709a36b687dc0ccf02cb1250589db513cf8f3a3d9\": failed to remove netns: unlinkat /run/netns/cni-efd9a8f2-5b32-6928-8100-7231b91ec810: device or resource busy"
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+  File "/usr/lib64/python2.7/subprocess.py", line 542, in check_call
+    raise CalledProcessError(retcode, cmd)
+subprocess.CalledProcessError: Command '['crictl', '--runtime-endpoint', 'unix:///run/containerd/containerd.sock', 'stopp', u'd0a7fef3c0ab99ac2a60faf709a36b687dc0ccf02cb1250589db513cf8f3a3d9']' returned non-zero exit status 1
+
+
+[master] Correct Flannel /run host mount to /run/flannel to avoid retaining stale network namespace mounts
+kubectl -n kube-system patch ds kube-flannel-ds --type strategic -p '{"spec":{"template":{"spec":{"containers":[{"name":"kube-flannel","volumeMounts":[{"mountPath":"/run","$patch":"delete"},{"name":"run","mountPath":"/run/flannel"}]}],"volumes":[{"name":"run","hostPath":{"path":"/run/flannel","type":"DirectoryOrCreate"}}]}}}}'
+kubectl -n kube-system rollout status ds/kube-flannel-ds --timeout=40s
+daemonset.apps/kube-flannel-ds patched
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 0 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 0 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 1 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 1 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 1 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 1 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 2 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 2 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 2 out of 3 new pods have been updated...
+Waiting for daemon set "kube-flannel-ds" rollout to finish: 2 of 3 updated pods are available...
+daemon set "kube-flannel-ds" successfully rolled out
+
+
+[node1] Complete Flannel network migration and remove unreachable containerd proxy
+set -e
+test -s /etc/cni/net.d/10-flannel.conflist
+test -x /opt/cni/bin/flannel
+systemctl stop kubelet
+trap 'systemctl start kubelet' EXIT
+python - <<'PY'
+import json, subprocess
+cri = ['crictl', '--runtime-endpoint', 'unix:///run/containerd/containerd.sock']
+pods = json.loads(subprocess.check_output(cri + ['pods','--state','Ready','-o','json'])).get('items',[])
+for pod in pods:
+    detail = json.loads(subprocess.check_output(cri + ['inspectp',pod['id']]))
+    mode = detail['status']['linux']['namespaces']['options']['network']
+    if mode == 'POD':
+        print('Recreate pod network: ' + pod['metadata']['namespace'] + '/' + pod['metadata']['name'])
+        subprocess.check_call(cri + ['stopp',pod['id']])
+    elif mode != 'NODE':
+        raise RuntimeError('Unexpected network mode: ' + str(mode))
+PY
+if ip link show cni0 >/dev/null 2>&1; then
+  ip link delete cni0
+fi
+rm -f /etc/cni/net.d/10-containerd-net.conflist
+chown root:root /etc/cni/net.d /etc/cni/net.d/10-flannel.conflist
+chmod 755 /etc/cni/net.d
+chmod 644 /etc/cni/net.d/10-flannel.conflist
+if grep -q 'http://192.168.169.1:7890' /etc/systemd/system/containerd.service.d/http-proxy.conf; then
+  sed -i 's#http://192.168.169.1:7890##g' /etc/systemd/system/containerd.service.d/http-proxy.conf
+  systemctl daemon-reload
+fi
+systemctl restart containerd
+systemctl start kubelet
+trap - EXIT
+systemctl is-active containerd kubelet
+ls -l /etc/cni/net.d
+
+Stopped sandbox 96bd6067eb639cc975e317f4e79584ba8e7d0dbd2d3a9dc661d85722305dce23
+Recreate pod network: default/nginx-847bc9794-tkmfg
+
+
+[node1] Allow containerd to reconnect existing shims (observed boot time 100 seconds exceeds systemd's former 90 second timeout)
+set -e
+install -d -m 755 /etc/systemd/system/containerd.service.d
+cat > /etc/systemd/system/containerd.service.d/startup-timeout.conf <<'EOF'
+[Service]
+TimeoutStartSec=300
+EOF
+systemctl daemon-reload
+systemctl reset-failed containerd
+systemctl start --no-block containerd
+systemctl start --no-block kubelet
+systemctl show containerd -p TimeoutStartUSec -p SubState
+TimeoutStartUSec=5min
+SubState=running
+
+
+[master] Finish network migration and apply runtime proxy/startup fixes
+set -e
+test -s /etc/cni/net.d/10-flannel.conflist
+test -x /opt/cni/bin/flannel
+systemctl stop kubelet
+trap 'systemctl start kubelet' EXIT
+python - <<'PY'
+import json, subprocess
+cri = ['crictl', '--runtime-endpoint', 'unix:///run/containerd/containerd.sock']
+pods = json.loads(subprocess.check_output(cri + ['pods','--state','Ready','-o','json'])).get('items',[])
+for pod in pods:
+    detail = json.loads(subprocess.check_output(cri + ['inspectp',pod['id']]))
+    mode = detail['status']['linux']['namespaces']['options']['network']
+    if mode == 'POD':
+        print('Recreate pod network: ' + pod['metadata']['namespace'] + '/' + pod['metadata']['name'])
+        subprocess.check_call(cri + ['stopp',pod['id']])
+    elif mode != 'NODE':
+        raise RuntimeError('Unexpected network mode: ' + str(mode))
+PY
+if ip link show cni0 >/dev/null 2>&1; then
+  ip link delete cni0
+fi
+rm -f /etc/cni/net.d/10-containerd-net.conflist
+chown root:root /etc/cni/net.d /etc/cni/net.d/10-flannel.conflist
+chmod 755 /etc/cni/net.d
+chmod 644 /etc/cni/net.d/10-flannel.conflist
+sed -i 's#http://192.168.169.1:7890##g' /etc/systemd/system/containerd.service.d/http-proxy.conf
+cat > /etc/systemd/system/containerd.service.d/startup-timeout.conf <<'EOF'
+[Service]
+TimeoutStartSec=300
+EOF
+systemctl daemon-reload
+systemctl restart --no-block containerd
+systemctl start kubelet
+trap - EXIT
+systemctl show containerd kubelet -p ActiveState -p SubState
+ls -l /etc/cni/net.d
+
+Stopped sandbox 2afcecc6881b2e50aa62afd03cb0dd0d19e9b4df13cc2c7ef5f039b2f82bcc74
+Stopped sandbox 93aee4b79395cb62c31a2b53dd0d47eb5eaf9f20732b5088314448aee4249bcc
+Stopped sandbox af2b59f3c2ab7700c20b4888af55bede515f1d04ab57081d51ecb41f9ae06e82
+Stopped sandbox c4018841712eed2803f7533f603a21042d2cf817c5de04e8cab7476f8c2fd480
+Stopped sandbox f90ca29b8b91f4f9894919d978194e7b4414a3d61d6f8f93ada1bbce7a00ff3e
+Recreate pod network: kube-system/coredns-7568f67dbd-8lgt5
+Recreate pod network: kubernetes-dashboard/kubernetes-dashboard-75885d7cdb-8jnxt
+Recreate pod network: kubernetes-dashboard/dashboard-metrics-scraper-598455b48b-strnj
+Recreate pod network: kubernetes-dashboard/kubernetes-dashboard-587498d78c-sc9t8
+Recreate pod network: kube-system/coredns-7568f67dbd-7lgr8
+ActiveState=activating
+SubState=start
+
+ActiveState=active
+SubState=running
+总用量 4
+-rw-r--r-- 1 root root 292 10月 28 00:21 10-flannel.conflist
+
+
+[master] Repair existing Nginx/Dashboard image startup: use reachable cached Nginx digest and existing Dashboard image
+set -e
+kubectl -n default patch deployment nginx --type strategic -p '{"spec":{"template":{"spec":{"containers":[{"name":"nginx","image":"registry.aliyuncs.com/k8sxio/nginx@sha256:f49a843c290594dcf4d193535d1f4ba8af7d56cea2cf79d1e9554f077f1e7aaa","imagePullPolicy":"IfNotPresent"}]}}}}'
+kubectl -n kubernetes-dashboard patch deployment kubernetes-dashboard --type strategic -p '{"spec":{"template":{"spec":{"containers":[{"name":"kubernetes-dashboard","imagePullPolicy":"IfNotPresent"}]}}}}'
+kubectl -n default rollout status deployment/nginx --timeout=40s
+kubectl -n kubernetes-dashboard rollout status deployment/kubernetes-dashboard --timeout=20s
+deployment.apps/nginx patched
+deployment.apps/kubernetes-dashboard patched
+Waiting for deployment "nginx" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "nginx" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "nginx" rollout to finish: 1 old replicas are pending termination...
+deployment "nginx" successfully rolled out
+deployment "kubernetes-dashboard" successfully rolled out
+
+
+[master] Create temporary cross-node validation pods (no service-account credentials mounted)
+set -e
+test -z "$(kubectl get ns codex-check-20261028-0027 --ignore-not-found -o name)"
+kubectl create -f - <<'EOF'
+{"apiVersion":"v1","kind":"List","items":[{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"codex-check-20261028-0027","labels":{"app.kubernetes.io/managed-by":"codex-k8s-repair"}}},{"apiVersion":"v1","kind":"Pod","metadata":{"name":"check-master","namespace":"codex-check-20261028-0027","labels":{"app":"codex-network-check"}},"spec":{"automountServiceAccountToken":false,"nodeSelector":{"kubernetes.io/hostname":"master"},"tolerations":[{"key":"node-role.kubernetes.io/master","operator":"Exists","effect":"NoSchedule"}],"containers":[{"name":"check","image":"quay.io/coreos/flannel:v0.15.0","imagePullPolicy":"IfNotPresent","command":["/bin/sh","-c","sleep 1800"],"resources":{"requests":{"cpu":"5m","memory":"8Mi"},"limits":{"cpu":"100m","memory":"32Mi"}}}],"terminationGracePeriodSeconds":1}},{"apiVersion":"v1","kind":"Pod","metadata":{"name":"check-node1","namespace":"codex-check-20261028-0027","labels":{"app":"codex-network-check"}},"spec":{"automountServiceAccountToken":false,"nodeSelector":{"kubernetes.io/hostname":"node1"},"tolerations":[],"containers":[{"name":"check","image":"quay.io/coreos/flannel:v0.15.0","imagePullPolicy":"IfNotPresent","command":["/bin/sh","-c","sleep 1800"],"resources":{"requests":{"cpu":"5m","memory":"8Mi"},"limits":{"cpu":"100m","memory":"32Mi"}}}],"terminationGracePeriodSeconds":1}},{"apiVersion":"v1","kind":"Pod","metadata":{"name":"check-node2","namespace":"codex-check-20261028-0027","labels":{"app":"codex-network-check"}},"spec":{"automountServiceAccountToken":false,"nodeSelector":{"kubernetes.io/hostname":"node2"},"tolerations":[],"containers":[{"name":"check","image":"quay.io/coreos/flannel:v0.15.0","imagePullPolicy":"IfNotPresent","command":["/bin/sh","-c","sleep 1800"],"resources":{"requests":{"cpu":"5m","memory":"8Mi"},"limits":{"cpu":"100m","memory":"32Mi"}}}],"terminationGracePeriodSeconds":1}}]}
+EOF
+kubectl -n codex-check-20261028-0027 wait --for=condition=Ready pod --all --timeout=40s
+kubectl -n codex-check-20261028-0027 get pods -o wide
+namespace/codex-check-20261028-0027 created
+pod/check-master created
+pod/check-node1 created
+pod/check-node2 created
+pod/check-master condition met
+pod/check-node1 condition met
+pod/check-node2 condition met
+NAME           READY   STATUS    RESTARTS   AGE   IP           NODE     NOMINATED NODE   READINESS GATES
+check-master   1/1     Running   0          1s    10.244.0.7   master   <none>           <none>
+check-node1    1/1     Running   0          1s    10.244.1.3   node1    <none>           <none>
+check-node2    1/1     Running   0          1s    10.244.2.4   node2    <none>           <none>
+
+
+[master] Acceptance: bidirectional pod network, DNS, Service HTTP, etcd and API health
+set -e
+NS=codex-check-20261028-0027
+for src in master node1 node2; do
+  for dst in master node1 node2; do
+    if [ "$src" != "$dst" ]; then
+      ip=$(kubectl -n "$NS" get pod "check-$dst" -o jsonpath='{.status.podIP}')
+      printf '\nPod network: %s -> %s (%s)\n' "$src" "$dst" "$ip"
+      kubectl -n "$NS" exec "check-$src" -- ping -c 2 -W 2 "$ip"
+    fi
+  done
+  printf '\nDNS and Service HTTP from %s\n' "$src"
+  kubectl -n "$NS" exec "check-$src" -- sh -ec 'nslookup kubernetes.default.svc.cluster.local; nslookup nginx.default.svc.cluster.local; wget -q -T 5 -O /tmp/nginx-response http://nginx.default.svc.cluster.local; grep -q "Welcome to nginx" /tmp/nginx-response; echo "NGINX_SERVICE_HTTP_OK"'
+done
+kubectl -n kube-system exec etcd-master -- env ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt --key=/etc/kubernetes/pki/etcd/healthcheck-client.key endpoint health
+kubectl get --raw='/readyz?verbose'
+
+
+Pod network: master -> node1 (10.244.1.3)
+PING 10.244.1.3 (10.244.1.3): 56 data bytes
+64 bytes from 10.244.1.3: seq=0 ttl=62 time=1.137 ms
+64 bytes from 10.244.1.3: seq=1 ttl=62 time=0.416 ms
+
+--- 10.244.1.3 ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.416/0.776/1.137 ms
+
+Pod network: master -> node2 (10.244.2.4)
+PING 10.244.2.4 (10.244.2.4): 56 data bytes
+64 bytes from 10.244.2.4: seq=0 ttl=62 time=1.209 ms
+64 bytes from 10.244.2.4: seq=1 ttl=62 time=0.539 ms
+
+--- 10.244.2.4 ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.539/0.874/1.209 ms
+
+DNS and Service HTTP from master
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+Name:	kubernetes.default.svc.cluster.local
+Address: 10.96.0.1
+
+*** Can't find kubernetes.default.svc.cluster.local: No answer
+
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+*** Can't find nginx.default.svc.cluster.local: No answer
+
+Name:	nginx.default.svc.cluster.local
+Address: 10.109.7.172
+
+NGINX_SERVICE_HTTP_OK
+
+Pod network: node1 -> master (10.244.0.7)
+PING 10.244.0.7 (10.244.0.7): 56 data bytes
+64 bytes from 10.244.0.7: seq=0 ttl=62 time=3.139 ms
+64 bytes from 10.244.0.7: seq=1 ttl=62 time=0.413 ms
+
+--- 10.244.0.7 ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.413/1.776/3.139 ms
+
+Pod network: node1 -> node2 (10.244.2.4)
+PING 10.244.2.4 (10.244.2.4): 56 data bytes
+64 bytes from 10.244.2.4: seq=0 ttl=62 time=2.315 ms
+64 bytes from 10.244.2.4: seq=1 ttl=62 time=0.448 ms
+
+--- 10.244.2.4 ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.448/1.381/2.315 ms
+
+DNS and Service HTTP from node1
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+*** Can't find kubernetes.default.svc.cluster.local: No answer
+
+Name:	kubernetes.default.svc.cluster.local
+Address: 10.96.0.1
+
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+Name:	nginx.default.svc.cluster.local
+Address: 10.109.7.172
+
+*** Can't find nginx.default.svc.cluster.local: No answer
+
+NGINX_SERVICE_HTTP_OK
+
+Pod network: node2 -> master (10.244.0.7)
+PING 10.244.0.7 (10.244.0.7): 56 data bytes
+64 bytes from 10.244.0.7: seq=0 ttl=62 time=0.723 ms
+64 bytes from 10.244.0.7: seq=1 ttl=62 time=0.456 ms
+
+--- 10.244.0.7 ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.456/0.589/0.723 ms
+
+Pod network: node2 -> node1 (10.244.1.3)
+PING 10.244.1.3 (10.244.1.3): 56 data bytes
+64 bytes from 10.244.1.3: seq=0 ttl=62 time=2.147 ms
+64 bytes from 10.244.1.3: seq=1 ttl=62 time=0.491 ms
+
+--- 10.244.1.3 ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.491/1.319/2.147 ms
+
+DNS and Service HTTP from node2
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+*** Can't find kubernetes.default.svc.cluster.local: No answer
+
+Name:	kubernetes.default.svc.cluster.local
+Address: 10.96.0.1
+
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+*** Can't find nginx.default.svc.cluster.local: No answer
+
+Name:	nginx.default.svc.cluster.local
+Address: 10.109.7.172
+
+NGINX_SERVICE_HTTP_OK
+error: Internal error occurred: error executing command in container: failed to exec in container: failed to start exec "c5d1cd1ba76b23dfe11280bbd8eafae29ba9f40978eed4173b9465bc54b9df56": OCI runtime exec failed: exec failed: container_linux.go:380: starting container process caused: exec: "env": executable file not found in $PATH: unknown
+
+Exit: 1
+
+[master] Final health and HTTP verification
+set -e
+kubectl -n kube-system exec etcd-master -- etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt --key=/etc/kubernetes/pki/etcd/healthcheck-client.key endpoint health
+kubectl get --raw='/readyz?verbose'
+for node in master node1 node2; do
+  printf '\nIPv4 DNS validation: %s\n' "$node"
+  kubectl -n codex-check-20261028-0027 exec "check-$node" -- nslookup -type=A kubernetes.default.svc.cluster.local
+done
+kubectl get nodes -o wide
+kubectl get ds,deploy -A
+kubectl get pods -A -o wide
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{range .status.conditions[*]}{.type}={.status}{" "}{end}{"\n"}{end}'
+kubectl get csr
+for host in 192.168.169.3 192.168.169.4 192.168.169.5; do
+  printf 'NGINX NodePort %s: ' "$host"
+  curl --noproxy '*' -sS --max-time 5 -o /dev/null -w '%{http_code}\n' "http://$host:30255"
+done
+printf 'Dashboard HTTPS: '
+curl --noproxy '*' -k -sS --max-time 5 -o /dev/null -w '%{http_code}\n' https://192.168.169.3:32320
+
+https://127.0.0.1:2379 is healthy: successfully committed proposal: took = 13.923667ms
+[+]ping ok
+[+]log ok
+[+]etcd ok
+[+]informer-sync ok
+[+]poststarthook/start-kube-apiserver-admission-initializer ok
+[+]poststarthook/generic-apiserver-start-informers ok
+[+]poststarthook/priority-and-fairness-config-consumer ok
+[+]poststarthook/priority-and-fairness-filter ok
+[+]poststarthook/start-apiextensions-informers ok
+[+]poststarthook/start-apiextensions-controllers ok
+[+]poststarthook/crd-informer-synced ok
+[+]poststarthook/bootstrap-controller ok
+[+]poststarthook/rbac/bootstrap-roles ok
+[+]poststarthook/scheduling/bootstrap-system-priority-classes ok
+[+]poststarthook/priority-and-fairness-config-producer ok
+[+]poststarthook/start-cluster-authentication-info-controller ok
+[+]poststarthook/aggregator-reload-proxy-client-cert ok
+[+]poststarthook/start-kube-aggregator-informers ok
+[+]poststarthook/apiservice-registration-controller ok
+[+]poststarthook/apiservice-status-available-controller ok
+[+]poststarthook/kube-apiserver-autoregistration ok
+[+]autoregister-completion ok
+[+]poststarthook/apiservice-openapi-controller ok
+[+]shutdown ok
+readyz check passed
+
+IPv4 DNS validation: master
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+Name:	kubernetes.default.svc.cluster.local
+Address: 10.96.0.1
+
+
+IPv4 DNS validation: node1
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+Name:	kubernetes.default.svc.cluster.local
+Address: 10.96.0.1
+
+
+IPv4 DNS validation: node2
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+Name:	kubernetes.default.svc.cluster.local
+Address: 10.96.0.1
+
+NAME     STATUS   ROLES                  AGE    VERSION   INTERNAL-IP     EXTERNAL-IP   OS-IMAGE                KERNEL-VERSION           CONTAINER-RUNTIME
+master   Ready    control-plane,master   493d   v1.22.2   192.168.169.3   <none>        CentOS Linux 7 (Core)   3.10.0-1160.el7.x86_64   containerd://1.5.5
+node1    Ready    worker                 493d   v1.22.2   192.168.169.4   <none>        CentOS Linux 7 (Core)   3.10.0-1160.el7.x86_64   containerd://1.5.5
+node2    Ready    worker                 493d   v1.22.2   192.168.169.5   <none>        CentOS Linux 7 (Core)   3.10.0-1160.el7.x86_64   containerd://1.5.5
+NAMESPACE     NAME                             DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+kube-system   daemonset.apps/kube-flannel-ds   3         3         3       3            3           <none>                   493d
+kube-system   daemonset.apps/kube-proxy        3         3         3       3            3           kubernetes.io/os=linux   493d
+
+NAMESPACE              NAME                                        READY   UP-TO-DATE   AVAILABLE   AGE
+default                deployment.apps/nginx                       1/1     1            1           492d
+kube-system            deployment.apps/coredns                     2/2     2            2           493d
+kubernetes-dashboard   deployment.apps/dashboard-metrics-scraper   1/1     1            1           493d
+kubernetes-dashboard   deployment.apps/kubernetes-dashboard        1/1     1            1           493d
+NAMESPACE                   NAME                                         READY   STATUS    RESTARTS        AGE     IP              NODE     NOMINATED NODE   READINESS GATES
+codex-check-20261028-0027   check-master                                 1/1     Running   0               94s     10.244.0.7      master   <none>           <none>
+codex-check-20261028-0027   check-node1                                  1/1     Running   0               94s     10.244.1.3      node1    <none>           <none>
+codex-check-20261028-0027   check-node2                                  1/1     Running   0               94s     10.244.2.4      node2    <none>           <none>
+default                     nginx-5d54fb6d7f-bfdwt                       1/1     Running   0               2m40s   10.244.2.2      node2    <none>           <none>
+kube-system                 coredns-7568f67dbd-7lgr8                     1/1     Running   6 (4m51s ago)   493d    10.244.0.2      master   <none>           <none>
+kube-system                 coredns-7568f67dbd-8lgt5                     1/1     Running   6 (4m52s ago)   493d    10.244.0.3      master   <none>           <none>
+kube-system                 etcd-master                                  1/1     Running   14 (20m ago)    493d    192.168.169.3   master   <none>           <none>
+kube-system                 kube-apiserver-master                        1/1     Running   32 (25m ago)    493d    192.168.169.3   master   <none>           <none>
+kube-system                 kube-controller-manager-master               1/1     Running   12 (20m ago)    493d    192.168.169.3   master   <none>           <none>
+kube-system                 kube-flannel-ds-k9tnl                        1/1     Running   0               8m37s   192.168.169.4   node1    <none>           <none>
+kube-system                 kube-flannel-ds-l5bnz                        1/1     Running   0               8m33s   192.168.169.3   master   <none>           <none>
+kube-system                 kube-flannel-ds-t7jtv                        1/1     Running   0               8m30s   192.168.169.5   node2    <none>           <none>
+kube-system                 kube-proxy-4vd6c                             1/1     Running   3 (76m ago)     493d    192.168.169.5   node2    <none>           <none>
+kube-system                 kube-proxy-j2lj5                             1/1     Running   3 (76m ago)     493d    192.168.169.4   node1    <none>           <none>
+kube-system                 kube-proxy-jhdn2                             1/1     Running   5 (104m ago)    493d    192.168.169.3   master   <none>           <none>
+kube-system                 kube-scheduler-master                        1/1     Running   14 (20m ago)    493d    192.168.169.3   master   <none>           <none>
+kubernetes-dashboard        dashboard-metrics-scraper-598455b48b-strnj   1/1     Running   5 (4m52s ago)   492d    10.244.0.4      master   <none>           <none>
+kubernetes-dashboard        kubernetes-dashboard-86c5978d96-hbj9j        1/1     Running   0               2m39s   10.244.2.3      node2    <none>           <none>
+master: NetworkUnavailable=False MemoryPressure=False DiskPressure=False PIDPressure=False Ready=True 
+node1: NetworkUnavailable=False MemoryPressure=False DiskPressure=False PIDPressure=False Ready=True 
+node2: NetworkUnavailable=False MemoryPressure=False DiskPressure=False PIDPressure=False Ready=True 
+NAME        AGE    SIGNERNAME                                    REQUESTOR            REQUESTEDDURATION   CONDITION
+csr-2v4k9   132d   kubernetes.io/kube-apiserver-client-kubelet   system:node:master   <none>              Approved,Issued
+csr-7t2wn   14m    kubernetes.io/kube-apiserver-client-kubelet   system:node:node2    <none>              Approved,Issued
+csr-vcjqs   14m    kubernetes.io/kube-apiserver-client-kubelet   system:node:node1    <none>              Approved,Issued
+NGINX NodePort 192.168.169.3: 200
+NGINX NodePort 192.168.169.4: 200
+NGINX NodePort 192.168.169.5: 200
+Dashboard HTTPS: 200
+
+Exit: 0
+
+[master] Remove only temporary validation namespace and confirm final cluster state
+set -e
+test "$(kubectl get ns codex-check-20261028-0027 -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')" = codex-k8s-repair
+kubectl delete namespace codex-check-20261028-0027 --timeout=35s
+kubectl get pods -A
+kubectl get nodes
+namespace "codex-check-20261028-0027" deleted
+NAMESPACE              NAME                                         READY   STATUS    RESTARTS        AGE
+default                nginx-5d54fb6d7f-bfdwt                       1/1     Running   0               3m44s
+kube-system            coredns-7568f67dbd-7lgr8                     1/1     Running   6 (5m55s ago)   493d
+kube-system            coredns-7568f67dbd-8lgt5                     1/1     Running   6 (5m56s ago)   493d
+kube-system            etcd-master                                  1/1     Running   14 (21m ago)    493d
+kube-system            kube-apiserver-master                        1/1     Running   32 (26m ago)    493d
+kube-system            kube-controller-manager-master               1/1     Running   12 (21m ago)    493d
+kube-system            kube-flannel-ds-k9tnl                        1/1     Running   0               9m41s
+kube-system            kube-flannel-ds-l5bnz                        1/1     Running   0               9m37s
+kube-system            kube-flannel-ds-t7jtv                        1/1     Running   0               9m34s
+kube-system            kube-proxy-4vd6c                             1/1     Running   3 (77m ago)     493d
+kube-system            kube-proxy-j2lj5                             1/1     Running   3 (77m ago)     493d
+kube-system            kube-proxy-jhdn2                             1/1     Running   5 (105m ago)    493d
+kube-system            kube-scheduler-master                        1/1     Running   14 (21m ago)    493d
+kubernetes-dashboard   dashboard-metrics-scraper-598455b48b-strnj   1/1     Running   5 (5m56s ago)   492d
+kubernetes-dashboard   kubernetes-dashboard-86c5978d96-hbj9j        1/1     Running   0               3m43s
+NAME     STATUS   ROLES                  AGE    VERSION
+master   Ready    control-plane,master   493d   v1.22.2
+node1    Ready    worker                 493d   v1.22.2
+node2    Ready    worker                 493d   v1.22.2
+
+
+[vm01] Persistence and resource checks
+{"server":"vm01","exit_code":0,"timed_out":false,"stdout":"master\nenabled\nenabled\nactive\nactive\nTimeoutStartUSec=5min\n/var/lib/kubelet/config.yaml:rotateCertificates: true\n/etc/kubernetes/kubelet.conf:    client-certificate: /var/lib/kubelet/pki/kubelet-client-current.pem\n/etc/kubernetes/kubelet.conf:    client-key: /var/lib/kubelet/pki/kubelet-client-current.pem\n10-flannel.conflist\n              total        used        free      shared  buff/cache   available\nMem:           1980         971         104          63         904         796\nSwap:             0           0           0\n/dev/mapper/centos-root   18G   11G  7.6G   58% /\n","stderr":"","stdout_truncated":false,"stderr_truncated":false}
+
+[node1] Persistence and resource checks
+{"server":"node1","exit_code":0,"timed_out":false,"stdout":"node1\nenabled\nenabled\nactive\nactive\nTimeoutStartUSec=5min\n/var/lib/kubelet/config.yaml:rotateCertificates: true\n/etc/kubernetes/kubelet.conf:    client-certificate: /var/lib/kubelet/pki/kubelet-client-current.pem\n/etc/kubernetes/kubelet.conf:    client-key: /var/lib/kubelet/pki/kubelet-client-current.pem\n10-flannel.conflist\n              total        used        free      shared  buff/cache   available\nMem:            972         448          70          16         453         354\nSwap:             0           0           0\n/dev/mapper/centos-root   28G  9.2G   19G   33% /\n","stderr":"","stdout_truncated":false,"stderr_truncated":false}
+
+[node2] Persistence and resource checks
+{"server":"node2","exit_code":0,"timed_out":false,"stdout":"node2\nenabled\nenabled\nactive\nactive\nTimeoutStartUSec=5min\n/var/lib/kubelet/config.yaml:rotateCertificates: true\n/etc/kubernetes/kubelet.conf:    client-certificate: /var/lib/kubelet/pki/kubelet-client-current.pem\n/etc/kubernetes/kubelet.conf:    client-key: /var/lib/kubelet/pki/kubelet-client-current.pem\n10-flannel.conflist\n              total        used        free      shared  buff/cache   available\nMem:            972         475          73          17         423         331\nSwap:             0           0           0\n/dev/mapper/centos-root   18G  8.7G  9.2G   49% /\n","stderr":"","stdout_truncated":false,"stderr_truncated":false}
+
+FINAL: PASSED. 1 master + 2 workers Ready; all installed workloads Running; etcd/API healthy; Flannel and kube-proxy 3/3; CoreDNS 2/2; 6 directed cross-node Pod network tests pass; DNS and Service HTTP pass on all 3 nodes; Nginx NodePorts and Dashboard return HTTP 200; temporary validation namespace removed.
+Repairs applied: renewed expired control-plane/worker credentials; restored kubelet rotation; corrected CNI configuration and Flannel mounts/installer; removed unreachable containerd proxy on all nodes; adjusted runtime startup timeout; repaired Nginx/Dashboard image startup.
+No etcd/configuration backups created, as requested.
+
+================ Debug 日志结束 ================

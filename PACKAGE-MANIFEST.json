@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "package": "k8s-handoff-20261028",
+  "project": "k8s入门",
+  "created_at": "2026-10-28T00:54:18.3300027+08:00",
+  "cluster_snapshot_date": "2026-10-28",
+  "credentials_included": false,
+  "manifest_hash_scope": "All payload files except this manifest",
+  "files": [
+    {
+      "path": "docs/CHECK_COMMANDS.md",
+      "bytes": 3125,
+      "sha256": "14CA33E7A22D71F47AA5D5C5802CD61CF59970832733C33FB9AEA5692AF46581"
+    },
+    {
+      "path": "docs/CLUSTER_CONTEXT.md",
+      "bytes": 4073,
+      "sha256": "5148103E55B44B904BC5FB5B2699A31B4979DAC01DF8E6AA6B9EEE3F6E757738"
+    },
+    {
+      "path": "inventory/cluster.json",
+      "bytes": 1136,
+      "sha256": "FFED27A63BC25D30D1D70A00D409EBAFD5946C54DDEC93E252EDA1B999172921"
+    },
+    {
+      "path": "logs/k8s-debug-20261028.log",
+      "bytes": 56835,
+      "sha256": "86EF8C9AB31DD4839F8A58C2561CEC0CDFBC5A0D17E8E416960D1248ACD6FB08"
+    },
+    {
+      "path": "logs/k8s-repair-20261028.log",
+      "bytes": 42415,
+      "sha256": "2CAF323E7BFC7D3FBD000C3B27490A2AEE17A0CB7A89B90B3C649D7FF2B2F0FB"
+    },
+    {
+      "path": "PLAN.md",
+      "bytes": 3736,
+      "sha256": "5FC86B81D1C5EE00C925C853E5FC96E86D922C4C8AE7ECB672D67D6ED1D42FF0"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2392,
+      "sha256": "089D4130FDEB90FB59C467A32BCF66FFC533B7A880E98A185DE11CBFC9DC6DDC"
+    }
+  ]
+}

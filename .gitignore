@@ -1,0 +1,26 @@
+# Local runtime dependencies, downloaded media and authentication state.
+.local/
+**/BBDown.data
+**/cookies.txt
+__pycache__/
+
+# Per-computer editor settings, dependencies and credentials.
+.idea/
+.DS_Store
+._*
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.ssh/
+.kube/
+*.pem
+*.key
+*.kubeconfig
+kubeconfig
+admin.conf
+id_rsa*
+id_ed25519*
+auth.json
+*.pyc

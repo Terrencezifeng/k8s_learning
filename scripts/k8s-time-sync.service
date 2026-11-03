@@ -1,0 +1,14 @@
+[Unit]
+Description=Synchronize K8s lab guest time at boot
+Wants=network-online.target chronyd.service
+After=network-online.target chronyd.service
+Before=kubelet.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/k8s-time-sync
+TimeoutStartSec=50
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

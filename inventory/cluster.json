@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "project": "k8s入门",
+  "status_as_of": "2026-10-28",
+  "timezone": "Asia/Shanghai",
+  "environment": "local VMware test cluster",
+  "kubernetes_version": "v1.22.2",
+  "container_runtime": "containerd 1.5.5",
+  "cni": "Flannel v0.15.0 VXLAN",
+  "api_server": "https://192.168.169.3:6443",
+  "pod_cidr": "10.244.0.0/16",
+  "service_cidr": "10.96.0.0/12",
+  "cluster_dns": "10.96.0.10",
+  "cluster_domain": "cluster.local",
+  "nodes": [
+    {"hostname":"master","ssh_mcp_alias":"vm01","ip":"192.168.169.3","ssh_port":22,"ssh_user":"root","role":"control-plane","pod_cidr":"10.244.0.0/24","verified_status":"Ready"},
+    {"hostname":"node1","ssh_mcp_alias":"node1","ip":"192.168.169.4","ssh_port":22,"ssh_user":"root","role":"worker","pod_cidr":"10.244.1.0/24","verified_status":"Ready"},
+    {"hostname":"node2","ssh_mcp_alias":"node2","ip":"192.168.169.5","ssh_port":22,"ssh_user":"root","role":"worker","pod_cidr":"10.244.2.0/24","verified_status":"Ready"}
+  ],
+  "services": {
+    "nginx": "http://192.168.169.3:30255",
+    "dashboard": "https://192.168.169.3:32320"
+  },
+  "credentials_included": false
+}
