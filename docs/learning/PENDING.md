@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-02 用户已提交 P16–P18 全部六道场景题，逐项反馈见 4.28。三类探针用途、Service 静态后端选择、退出按 Always 重启与退避等有书面正确证据；init 重试、Never、startup 门控、退出宽限期、TCP 检查、readiness 动态恢复、命令及 UID 区分已纠正／补充待验证。新增三道针对性复盘待答；无本轮实操输出。实际学习时长未知，历史记录尚未归档。
+状态：2026-11-02 用户已提交 P16–P18 全部六道场景题，逐项反馈见 4.28。2026-11-04 用户确认已读完上轮反馈，继续原有 R1–R3 书面复盘，见 4.29；三题仍待答。三类探针用途、Service 静态后端选择、退出按 Always 重启与退避等有书面正确证据；init 重试、Never、startup 门控、退出宽限期、TCP 检查、readiness 动态恢复、命令及 UID 区分已纠正／补充待验证。无本轮实操输出。实际学习时长未知，历史记录尚未归档。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -367,9 +367,17 @@
 - 针对性复盘（R1–R3，均待答；末尾附空白模板）：R1：普通 init-a 成功、init-b exit 1；a）Always 下重试谁、app 能否启动；b）Never 下结果。R2：a）startup 未成功时另外两类是否探测；b）启动后 readiness 失败、liveness 正常，是否因此重启及是否继续接普通 Service 新流量；c）就绪恢复后能否重新接流量。R3：假设 Namespace=training-life、Pod=order-api-0、容器=server；a）写 describe 事件/退出状态命令；b）写上一次 server 实例日志命令；c）说出识别 Pod 是否被替换的关键字段。命令只书面作答，不要求实操。
 - 后续边界：退出宽限期、TCP 检查、配置共享及 MySQL ping 等本轮补充仍标已讲解未验证，不因未纳入三题复盘而自动通过。保留既往命令正确证据，同时记录本轮新场景迁移错误。无集群连接或新实验，学习时长未知，未正式归档。
 
+### 4.29 2026-11-04：确认阅读反馈，接续 R1–R3 书面复盘
+
+- 用户报告：“已经阅读完成上轮反馈，请继续”。确认阅读的是上轮反馈，不据此将纠正内容标为掌握，也不推进至 P19。
+- 本轮接续 4.28 已布置的三题，未新增考核范围：R1 为 init-a 已成功、init-b exit 1 时，Always 下的重试对象、init-a 是否重跑与 app 能否启动，以及 Never 下是否重试和 Pod／app 的结果；排除节点与 sandbox 重建。R2 为 startup 未成功时另外两类探针是否执行，以及 startup 成功后 readiness 失败达阈值、liveness 正常时的重启与普通 Service 新流量变化、就绪恢复后是否需要重建。R3 沿用 Namespace=training-life、Pod=order-api-0、容器=server，书写查看事件／退出状态、上一实例日志的命令，并指出区分 Pod 替换的关键字段。
+- 题目均为假设场景；R2 假设单应用容器、无额外 readinessGate、Service 标签与网络端口正常、publishNotReadyAddresses=false，不讨论已有长连接；R3 假设容器已有重启且上一实例日志仍可用。题末提供与全部小问对应的空白模板，允许回答不确定／不会；Mac 仅书面作答，不要求执行或实际输出。
+- 核对来源：复用项目笔记，并重新查阅 [v1.22 探针文档](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)、[v1.22 Pod 生命周期](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/concepts/workloads/pods/pod-lifecycle.md)、[普通 init](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) 和 [kubectl logs 参数](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/)。没有重新下载视频、读取新字幕或查看新关键帧。
+- 当前状态：R1–R3 尚无本轮作答，既有正确证据与未验证项均保留；无集群连接、实验或新掌握证据。实际学习时长未知，继续暂存，不形成正式记录。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.28 的逐题反馈；原六题已全部提交，从新复盘 R1–R3 接收回答。保留历史正确证据和本轮迁移错误，按最新回答更新，不把原题重新记成未答。退出宽限期、TCP 等补充尚未验证。题目对象均为假设；此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.28 的逐题反馈；用户于 2026-11-04 确认已读反馈，本轮接续见 4.29。原六题已全部提交，接收 R1–R3 的书面回答。保留历史正确证据和本轮迁移错误，按最新回答更新，不把原题重新记成未答。退出宽限期、TCP 等补充尚未验证。题目对象均为假设；此前 lab-web 是否存在及镜像故障仍未确认，实操先取证据，不自动创建或清理资源。实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
