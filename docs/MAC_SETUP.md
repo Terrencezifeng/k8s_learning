@@ -84,9 +84,17 @@ gh auth status --hostname github.com
 - 可执行文件：`/Users/zifeng.deng/.local/bin/gh`，该目录原已位于 PATH，无需修改 shell 配置。
 - 许可证：`/Users/zifeng.deng/.local/share/licenses/gh/LICENSE`。
 - 实际验证：`command -v gh` 返回上述路径；`gh --version` 返回 `gh version 2.103.3 (2026-10-26)`；安装前后可执行文件 SHA-256 一致，架构为 Mach-O arm64。
-- 登录状态：`gh auth status --hostname github.com` 返回尚未登录任何 GitHub 主机；安装成功不等于认证已完成。
+- 安装完成时的登录状态：`gh auth status --hostname github.com` 返回尚未登录任何 GitHub 主机；后续授权与推送验证见 2.3。
 
-本次使用官方独立安装包，未安装 Homebrew。下一步由用户在 Mac 终端执行 2.1 的浏览器登录与 Git 凭据配置命令；授权成功后重新运行学习同步 push，补传保留的本地提交。此处仅记录工具安装，不新增 K8s 学习完成度或实操证据。
+本次使用官方独立安装包，未安装 Homebrew。安装后由用户在 Mac 终端完成 2.1 的浏览器登录与 Git 凭据配置；实际同步验证见 2.3。此处仅记录工具安装，不新增 K8s 学习完成度或实操证据。
+
+### 2.3 2026-11-04 授权与真实推送验证
+
+用户完成 GitHub 授权后，已确认活动账户为 Terrencezifeng，凭据保存在系统 keyring，Git 协议为 HTTPS。在具备网络与钥匙串访问权限的执行环境中，`gh auth status --hostname github.com` 退出码为 0。
+
+学习同步脚本实际 push 成功，返回 `Push complete; 6f5ec7d`；此前积压的 4 个本地提交已补推至指定仓库 main。随后通过 `git ls-remote --heads origin main` 独立核对，远端 SHA 与本地 HEAD、origin/main 相同，工作树干净。`6f5ec7d` 是本次补推验收点，后续保存本节记录会新增提交。
+
+Mac 的首次安装、登录与真实 GitHub 推送均已验证，日常可直接按项目规则执行 pull／push。若受限执行环境误报 Token 无效，先核对是否缺少网络或系统钥匙串访问权限，再在获准的执行环境中复核，不据单次受限探测直接清除有效授权。
 
 ## 3 给新学习会话的上下文
 

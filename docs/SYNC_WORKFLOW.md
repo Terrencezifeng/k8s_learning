@@ -77,3 +77,4 @@ Git 快进与合并行为参考 [Git 官方文档](https://git-scm.com/docs/git-
 - 2026-11-03：首次提交 `5d743b9` 已推送至指定 GitHub 仓库 main，本地与远端 SHA 一致；共发布 45 个文件，排除 `.local/` 和 `.idea/`，历史 ZIP、清单及日志按原始字节保留。
 - Windows 本地 13 项同步集成测试通过；真实仓库上的脚本 `pull` 与无变化 `push` 均成功，工作树干净。
 - 已配置三平台 GitHub Actions；运行结果以 [Actions 页面](https://github.com/Terrencezifeng/k8s_learning/actions) 为准。公司 Mac 尚需按迁移说明配置 Git、Python 和登录，不能把 CI 或 Windows 验证等同于公司 Mac 已安装完成。
+- 2026-11-04：Mac 已安装并验证 GitHub CLI 2.103.3；用户完成浏览器授权后，本机活动账户与 keyring 认证验证通过，真实脚本 push 成功，积压的 4 个学习提交已补推至 `6f5ec7d`。随后独立读取远端 main，确认与本地 HEAD、origin/main 一致，工作树干净；此前“Mac 尚需首次配置”的状态已解除。详见 [Mac 说明](MAC_SETUP.md) 2.3；此 SHA 为补推验收点，后续记录提交会推进 main。
