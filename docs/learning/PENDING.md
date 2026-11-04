@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-04 用户已补齐 F1a 的挂载目录与文件名，规范连写为 /etc/app/config.ini，书面通过，见 4.36。本轮 F1–F2 已收尾，目前没有待答考题，不继续追加同类补填。B1 职责细节、B2b 工具依赖、配置来源与信号收尾机制仍按各自证据保留，未据本轮收尾认定全面掌握。原六题、R1–R3、C1–C2 与 B5 等通过结论不变；课程仍为 P18，无新实操，实际学习时长未知，历史记录尚未归档。Mac GitHub 授权与真实推送已验证，见第 10 节。
+状态：2026-11-05 用户报告已看完 P19、P20、P21，观看位置更新至 P21；按请求布置本轮 Q1–Q5 书面场景考核，均待答，详见 4.37。观看完成不等于掌握，尚无本轮答案或新实操。此前 F1–F2 已收尾，原六题、R1–R3、C1–C2、B5 等通过结论保留；其他未验证细节不自动通过。实际学习时长未知，历史记录尚未归档；Mac 只阅读与书面考核，GitHub 授权与同步按现有规则执行。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -480,9 +480,35 @@
 - 当前状态：F1 同卷原理与文件路径、F2 用途／检查方式与 TCP 不等于 HTTP 200 均有书面通过证据，本轮短复盘收尾，没有待答考题。此前 B1 的完整角色复述、B2b 的工具依赖、ConfigMap 与动态配置来源、应用信号收尾等仍按原有边界保留，不据此自动通过。
 - 下一步可继续 P19 的 readiness／liveness 对照阅读，用户尚未报告已学 P19，课程位置仍为 P18。Mac 只阅读与书面分析，无集群连接、挂载、命令执行或实践输出；实际学习时长未知，继续暂存，不正式归档。
 
+### 4.37 2026-11-05：P19–P21 观看报告与 Q1–Q5 场景考核
+
+- 用户真实请求：“已看完 P19、P20、P21，请帮我检查学习成果”。按用户报告更新观看位置至 P21，不把观看完成写成已掌握或已执行课程实验。
+- 读取来源：复用 [P18–P21 精读笔记](video-notes/P018-P021-预习精读.md) 与 [分 P／CID 索引](video-notes/P014-P025-预习索引.md)，核对以下课程来源；未重新下载、播放视频、抽取新字幕或查看新关键帧。课程演示 v1.29，判题沿用最近确认的实验基线 v1.22.2。
+
+| 分 P | 已核对标题／CID | 本轮考核对应范围 |
+| --- | --- | --- |
+| P19 | 第四章.k8s资源清单-Pod的生命周期4；500001651198150 | 05:43–09:27 readiness 持续检查；17:01–24:59 liveness、重启与容器可写层 |
+| P20 | 第四章.k8s资源清单-Pod的生命周期5；500001651201097 | 00:33–05:38 startup 参数与启动预算；09:49–17:31 钩子；21:16–30:24 综合故障定位 |
+| P21 | 第四章.k8s资源清单-Pod如何被调度运行1；500001651203545 | 00:24–03:45 镜像与资源存储、调度／节点执行职责及 Scheduler 故障边界 |
+
+- 出题原则：在既有探针用途、readiness 失败／恢复、TCP／HTTP 区分、共享卷路径和退出预算证据上推进，测试连续计数、配置审阅、容器重启后的不同存储、钩子失败与调度故障；不将原已通过题重新列为未答。Q5 接续此前尚缺完整验证的组件职责，不据已讲解自动认定掌握。
+- 全部为假设场景，仅 Mac 书面作答；未创建题目对象、未执行故障注入、命令或集群连接。允许先答 Q1–Q2，或标记不确定／不会；没有本轮答案时不评分。
+
+| 题号 | 场景与问题 | 状态 |
+| --- | --- | --- |
+| Q1 readiness 连续计数 | 单应用容器原已 Ready，startup 已完成，无额外就绪条件；readiness 的 failureThreshold=3、successThreshold=2。实际检查结果按序号为 1失败、2成功、3失败、4失败、5失败、6成功、7成功。忽略状态传播延迟。a）第几次后按阈值变为未就绪，说明计数理由；b）第几次后恢复就绪，说明理由 | 待答 |
+| Q2 startup 配置审阅 | Pod 的 restartPolicy=Always；应用容器 startupProbe 的 httpGet 为 /startup、8080，periodSeconds=10、failureThreshold=30、successThreshold=3，其余必要配置正常。a）指出不合法字段及修正值；b）修正后估算连续失败容忍窗口，并说明启动检查始终不通过、达到失败阈值后的处理。不要求精确秒表时刻 | 待答 |
+| Q3 重启身份与文件 | 镜像原有 /app/index.html，仅在容器可写层将它改名；另在挂载的 emptyDir 中写入 /data/cache.txt。随后 liveness 失败达阈值，Always；Pod 未删除、节点未故障。后续观测为 Pod UID 未变、containerID 改变、restartCount 加 1。a）判断 Pod 对象／容器实例哪个变化；b）新实例中原 /app/index.html 是否恢复、/data/cache.txt 是否还在，分别解释 | 待答 |
+| Q4 postStart 失败排查 | 普通 init 均已成功，镜像与应用命令正常，应用容器的 HTTP postStart 调用外部回调服务；事件出现 FailedPostStartHook、目标连接被拒绝，restartPolicy=Always。a）失败属于哪个机制，是否可能导致该容器被终止并按策略重启；b）下一步优先核对哪些回调配置、服务或连接证据 | 待答 |
+| Q5 Scheduler 故障与职责 | 仅默认 Scheduler 停止，API Server、etcd、节点 kubelet 和 containerd 正常；已有应用 Pod 正在运行，新普通 Pod 未手工指定 nodeName，也没有其他调度器接管。a）分别说明已有 Pod 与新 Pod 受影响的环节；b）恢复后新 Pod 绑定 node1，说明 kubelet、containerd、镜像仓库和 etcd 的分工 | 待答 |
+
+- Q2 配置为故意含错误的审阅片段，不是可直接部署的示例；不能因课程口头说法不同就把非法字段当作正确行为。问答反馈时再解释依据，不在空白模板预填答案。
+- 官方核对：已读取 [v1.22 探针说明](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md) 与 [v1.22.2 连续计数实现](https://raw.githubusercontent.com/kubernetes/kubernetes/v1.22.2/pkg/kubelet/prober/worker.go)，并核对 [官方钩子说明](https://v1-32.docs.kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/)、[卷与容器重启](https://kubernetes.io/docs/concepts/storage/volumes/)、[Scheduler 职责](https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/)。旧版运行时代码的直接抓取未成功，本轮依据已有课程核对记录及官方普通 postStart 行为出题，不声称已重新读取该旧版源码；不引入新版 sidecar、停止信号或卷权限特性。
+- 题末提供 Q1–Q5、每题 a／b 一一对应的空白模板；所有命令与状态只作书面场景，不预填实际输出。实际学习时长未知，不以三段视频时长推算，本轮先暂存、不正式归档。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.36，F1a 已补齐并通过，本轮 F1–F2 收尾，目前没有待答考题。不重复布置已通过题目，也不自动追加整套考核；可沿课程继续 P19 阅读，P19 尚未获已学报告。B1 职责细节、B2b 工具依赖、配置来源与退出信号机制按需要巩固，保留各自验证边界。Mac 只阅读与书面分析，不自动创建或清理资源；后续按项目规则同步，实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.37，接收 P19–P21 本轮 Q1–Q5 的书面答案；允许先答部分题或标记不确定／不会。按最新作答逐项解释参数、故障阶段和组件职责，不把观看完成记为掌握。此前 F1–F2 已收尾，已通过内容不恢复为未答；P22 以后尚未获用户已学报告。Mac 只阅读与书面分析，不自动创建或清理资源；后续按项目规则同步，实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
