@@ -78,3 +78,24 @@ Git 快进与合并行为参考 [Git 官方文档](https://git-scm.com/docs/git-
 - Windows 本地 13 项同步集成测试通过；真实仓库上的脚本 `pull` 与无变化 `push` 均成功，工作树干净。
 - 已配置三平台 GitHub Actions；运行结果以 [Actions 页面](https://github.com/Terrencezifeng/k8s_learning/actions) 为准。公司 Mac 尚需按迁移说明配置 Git、Python 和登录，不能把 CI 或 Windows 验证等同于公司 Mac 已安装完成。
 - 2026-11-04：Mac 已安装并验证 GitHub CLI 2.103.3；用户完成浏览器授权后，本机活动账户与 keyring 认证验证通过，真实脚本 push 成功，积压的 4 个学习提交已补推至 `6f5ec7d`。随后独立读取远端 main，确认与本地 HEAD、origin/main 一致，工作树干净；此前“Mac 尚需首次配置”的状态已解除。详见 [Mac 说明](MAC_SETUP.md) 2.3；此 SHA 为补推验收点，后续记录提交会推进 main。
+
+## 7 2026-11-05 核查：同步成功，macOS 自动检查曾因 Runner 容量失败
+
+用户发现 GitHub 上的失败标记后，已分别核对文件同步和 Actions 检查，结论如下：
+
+| 核查项 | 实际证据 | 结论 |
+| --- | --- | --- |
+| 仓库与认证 | 指定 origin、main 分支；Terrencezifeng 的 keyring 授权有效 | 未出现登录或仓库目标错误 |
+| 同步提交 | 核查时本地 HEAD、origin/main、GitHub refs/heads/main 均为 efbcaf171e53dee63f0e3b2039f3ba613453984f，工作树干净 | 最新学习记录已推送；此 SHA 为诊断起点，后续诊断记录提交会推进 main |
+| 学习文件 | 远端 PROGRESS.md、PENDING.md 的 Git blob SHA 与本地提交一致；远端记录包含 F1a 补填通过与短复盘收尾 | 最近的学习进度和问答内容没有遗漏 |
+| 同步脚本 | 本机实际执行 pull 退出码为 0，返回 Pull complete | 拉取流程正常 |
+| 本机测试 | python3 -B -m unittest discover -s tests -v，13 项全部通过 | 同步脚本离线回归通过 |
+| 最新 Actions 初次运行 | run 41863078249 的 Windows、Ubuntu 均通过；macos-latest 无 Runner、无执行步骤，约 15 分钟后 cancelled | macOS 检查未开始执行，不是测试断言失败 |
+| macOS 平台注释 | GitHub 报告托管 Runner 多次分配未成功，并提示 macOS arm64 容量不足 | 根因为该次 GitHub 托管 Runner 资源分配失败 |
+| 重跑验证 | 仅重跑 macOS job，run 41863078249 的 attempt 2 整体 success，三个平台均为 success | 本次检查恢复通过，保留现有工作流与同步脚本 |
+
+前一次 run 41861645703 也表现为 Windows／Ubuntu 成功、macOS 在执行任何步骤前被取消。旧运行历史保留失败记录，不据此认定最新文件未上传。
+
+以后排查时先区分两类结果：文件同步用脚本退出码、本地与远端提交 SHA 和工作树状态核对；自动检查用 Actions 的具体 job、步骤、注释和重跑结果核对。红色检查标记本身不能证明提交未推送。若属于 Runner 分配失败，可在授权范围内仅重跑受影响 job；若测试步骤实际执行并失败，再按日志定位脚本或环境问题，不直接强推、重置或改动学习记录。
+
+本项目工作流由 push／pull_request 触发，使用只读 contents 权限，在 Windows、macOS、Ubuntu 运行离线同步集成测试。它不承担学习文件的上传，也没有生产部署或发布步骤。参考：[本次运行](https://github.com/Terrencezifeng/k8s_learning/actions/runs/41863078249)、[GitHub 重跑失败任务说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs/re-run-failed-jobs-in-a-workflow)。
