@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-05 用户报告已看完 P19、P20、P21，观看位置更新至 P21；按请求布置本轮 Q1–Q5 书面场景考核，均待答，详见 4.37。观看完成不等于掌握，尚无本轮答案或新实操。此前 F1–F2 已收尾，原六题、R1–R3、C1–C2、B5 等通过结论保留；其他未验证细节不自动通过。实际学习时长未知，历史记录尚未归档；Mac 只阅读与书面考核，GitHub 授权与同步按现有规则执行。
+状态：2026-11-10 用户提交 P19–P21 本轮 Q1–Q3 书面答案，反馈见 4.38。Q1 全部通过，Q3 核心判断通过并补正 emptyDir 保留数据的原因；Q2a、Q2b 尚未通过，Q4–Q5 待答。观看位置仍为 P21，无本轮实操。此前已通过结论保留；实际学习时长未知，历史记录尚未归档。跨设备同步按现有规则执行。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -506,9 +506,20 @@
 - 官方核对：已读取 [v1.22 探针说明](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md) 与 [v1.22.2 连续计数实现](https://raw.githubusercontent.com/kubernetes/kubernetes/v1.22.2/pkg/kubelet/prober/worker.go)，并核对 [官方钩子说明](https://v1-32.docs.kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/)、[卷与容器重启](https://kubernetes.io/docs/concepts/storage/volumes/)、[Scheduler 职责](https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/)。旧版运行时代码的直接抓取未成功，本轮依据已有课程核对记录及官方普通 postStart 行为出题，不声称已重新读取该旧版源码；不引入新版 sidecar、停止信号或卷权限特性。
 - 题末提供 Q1–Q5、每题 a／b 一一对应的空白模板；所有命令与状态只作书面场景，不预填实际输出。实际学习时长未知，不以三段视频时长推算，本轮先暂存、不正式归档。
 
+### 4.38 2026-11-10：Q1–Q3 书面作答与反馈
+
+- 来源：用户在本项目继续提交 Q1–Q3 答案，并明确要求核对 Q3 的容器可写层理解；Q4–Q5 本次未提交。未连接集群或执行实验，实际学习时长未知。
+- Q1a／b：用户分别答第 5 次后未就绪、第 7 次后恢复就绪，并正确以第 3–5 次连续失败、第 6–7 次连续成功解释。**书面通过**。题设忽略状态传播延迟，未据此推断真实 Service 流量。
+- Q2a：用户误判 `failureThreshold=30` 不合法，修正值不确定。反馈：v1.22 的 `startupProbe.successThreshold` 必须为 1，题中 3 不合法；`failureThreshold=30` 合法。**本小问待复盘**。
+- Q2b：用户答“将 Pod 标记为未就绪状态，notready”。反馈：`30 × 10` 约为 300 秒连续失败容忍窗口；startup 始终不通过并达到阈值时，kubelet 终止该容器，`restartPolicy=Always` 下重新启动。未就绪是启动检查未通过期间的状态表现，不能代替阈值后的处理。**本小问待复盘**。
+- Q3a：用户依据 Pod UID 未变、containerID 改变、restartCount 加 1 判断 Pod 对象未变、容器实例重建。**书面通过**。
+- Q3b：用户答镜像中的 `/app/index.html` 恢复，因新容器有新的可写层；`/data/cache.txt` 保留。**结论与可写层机制书面通过**。补正：文件保留的关键是 `emptyDir` 卷归属于仍存在于同一节点的 Pod，容器重启不会清除该卷；不是因为它仅仅挂在“另外的目录”。Pod 被移除后 emptyDir 数据不保留，未在真实集群验证。
+- 官方依据：[v1.22 探针说明](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)明确 startup 的 `successThreshold` 必须为 1，并以 `failureThreshold=30`、`periodSeconds=10` 给出约 300 秒和失败后重启示例；[v1.22 卷说明](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/concepts/storage/volumes.md)说明容器重启后的文件与卷生命周期、emptyDir 的 Pod 作用域。
+- 下次起点：先请用户用自己的话修正 Q2a／b；Q4–Q5 保持待答，可在其后继续。Q1 与 Q3 已通过的部分不重复布置。保留书面与实操的证据边界，未知学习时长继续暂存。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.37，接收 P19–P21 本轮 Q1–Q5 的书面答案；允许先答部分题或标记不确定／不会。按最新作答逐项解释参数、故障阶段和组件职责，不把观看完成记为掌握。此前 F1–F2 已收尾，已通过内容不恢复为未答；P22 以后尚未获用户已学报告。Mac 只阅读与书面分析，不自动创建或清理资源；后续按项目规则同步，实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.38，接收 Q2a／b 修正后的书面复盘，再按用户节奏接收 Q4–Q5。Q1 已通过，Q3 结论与主要机制已通过，不重复考；不把观看完成记为掌握。P22 以后尚未获用户已学报告。未获明确实操请求时不连接集群；Mac 只阅读与书面分析。实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
