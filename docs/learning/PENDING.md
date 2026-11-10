@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-10 用户提交 P19–P21 本轮 Q1–Q3 书面答案，反馈见 4.38。Q1 全部通过，Q3 核心判断通过并补正 emptyDir 保留数据的原因；Q2a、Q2b 尚未通过，Q4–Q5 待答。观看位置仍为 P21，无本轮实操。此前已通过结论保留；实际学习时长未知，历史记录尚未归档。跨设备同步按现有规则执行。
+状态：2026-11-10 用户完成 Q2a／b 针对性书面复盘，两小问均通过，见 4.39。Q1、Q2、Q3 已书面收尾，Q4–Q5 待答；观看位置仍为 P21，无本轮实操。此前已通过结论保留；实际学习时长未知，历史记录尚未归档。跨设备同步按现有规则执行。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -517,9 +517,16 @@
 - 官方依据：[v1.22 探针说明](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)明确 startup 的 `successThreshold` 必须为 1，并以 `failureThreshold=30`、`periodSeconds=10` 给出约 300 秒和失败后重启示例；[v1.22 卷说明](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/concepts/storage/volumes.md)说明容器重启后的文件与卷生命周期、emptyDir 的 Pod 作用域。
 - 下次起点：先请用户用自己的话修正 Q2a／b；Q4–Q5 保持待答，可在其后继续。Q1 与 Q3 已通过的部分不重复布置。保留书面与实操的证据边界，未知学习时长继续暂存。
 
+### 4.39 2026-11-10：Q2a／b 复盘通过
+
+- 用户 Q2a 答：startup 探针的 `successThreshold` 不合法，应改为 1；一次成功即可判定应用启动检查通过。**书面通过**。补充边界：此处表示应用通过 startup 检查，不等于 Pod 已通过 readiness 并可接收流量。
+- 用户 Q2b 答：`periodSeconds=10`、`failureThreshold=30`，估算约 `30 × 10 = 300` 秒；若持续失败达到阈值，容器被终止并重新启动。**书面通过**。题设 `restartPolicy=Always`，时间为近似窗口，不要求推断精确触发时刻。
+- 依据：[v1.22 探针说明](https://raw.githubusercontent.com/kubernetes/website/release-1.22/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)中 startup 的参数约束、300 秒示例及失败后按重启策略处理。没有本轮集群命令或实际输出，实际学习时长未知，保持暂存。
+- 下次起点：Q1–Q3 均已书面收尾；按用户节奏接收尚未提交的 Q4 postStart 故障与 Q5 Scheduler 分工答案，不重复考已通过部分。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.38，接收 Q2a／b 修正后的书面复盘，再按用户节奏接收 Q4–Q5。Q1 已通过，Q3 结论与主要机制已通过，不重复考；不把观看完成记为掌握。P22 以后尚未获用户已学报告。未获明确实操请求时不连接集群；Mac 只阅读与书面分析。实际学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.39，按用户节奏接收 Q4–Q5。Q1–Q3 已书面收尾，不重复考；不把观看完成记为掌握。P22 以后尚未获用户已学报告。未获明确实操请求时不连接集群；Mac 只阅读与书面分析。实际学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
@@ -563,3 +570,9 @@
 - 实际失败点：最新 run 41863078249 初次运行的 Windows／Ubuntu 测试通过，macOS 未分配到托管 Runner，执行步骤为空，约 15 分钟后取消；GitHub 注释明确提示 macOS arm64 容量不足与 Runner 分配失败。前一次 run 41861645703 同样仅 macOS 失败。
 - 验证与处理：本机 13 项同步集成测试全部通过，实际脚本 pull 成功；仅重跑最新运行中被取消的 macOS job 后，attempt 2 整体成功，三平台均通过。未修改同步脚本、测试或工作流配置。
 - 完整证据与后续核查方法见 [同步说明](../SYNC_WORKFLOW.md) 第 7 节。此前学习通过结论、P18 课程位置与未知学习时长保持原状态，不新增考题；后续保存本节诊断会新增正常同步提交。
+
+## 12 2026-11-10 配置补充：追问附完整题目背景
+
+- 用户要求：针对已经回答的问题继续追问时，在新的追问消息中提供完整背景，避免需要向上翻找原题。
+- 已写入 [项目规则](../../AGENTS.md) 第 3 节及 [学习者画像](PROFILE.md)：新消息包含独立作答所需的场景、对象、版本、前提和相关参数／片段，完整列出本轮问题、保留原题号，并在末尾提供对应的空白回答模板。原条件改变时明确说明，链接不替代题目背景。
+- 本次只调整追问方式，不新增考题或掌握证据。用户引用的旧反馈用于说明格式问题，不据此把已有后续通过记录的 Q2 恢复为待答；学习进度以最新学习记录为准，配置耗时不计入学习时长。
