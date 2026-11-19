@@ -1,15 +1,91 @@
 """Offline integration tests: two clones and a local bare Git remote."""
 import importlib.util
+import io
 import os
+from contextlib import redirect_stderr
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import call, patch
 
 spec = importlib.util.spec_from_file_location(
     "learning_sync", Path(__file__).resolve().parents[1] / "scripts/learning_sync.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+
+
+class RetryTests(unittest.TestCase):
+    def test_transient_fetch_and_push_recover_without_logging_remote_output(self):
+        for command in ('fetch', 'push'):
+            with self.subTest(command=command):
+                failure = subprocess.CompletedProcess([], 128, b'',
+                    b'Failed to connect to github.com port 443: Timed out; PRIVATE_TEXT')
+                success = subprocess.CompletedProcess([], 0, b'ok', b'')
+                output = io.StringIO()
+                with patch.object(module.subprocess, 'run', side_effect=[
+                        subprocess.TimeoutExpired('git', 60), failure, success]) as run, \
+                        patch('time.sleep') as sleep, redirect_stderr(output):
+                    result = module.Repository('.').run(command, 'origin')
+                self.assertIs(result, success)
+                self.assertEqual(run.call_count, 3)
+                self.assertEqual(sleep.call_args_list, [call(5), call(10)])
+                self.assertIn('3/5', output.getvalue())
+                self.assertNotIn('PRIVATE_TEXT', output.getvalue())
+
+    def test_retry_budget_is_five_attempts(self):
+        for failure in (subprocess.TimeoutExpired('git', 60),
+                        subprocess.CompletedProcess([], 128, b'', b'Connection reset by peer')):
+            with self.subTest(failure=type(failure).__name__):
+                with patch.object(module.subprocess, 'run', side_effect=[failure] * 5) as run, \
+                        patch('time.sleep') as sleep, redirect_stderr(io.StringIO()):
+                    with self.assertRaisesRegex(module.SyncError, '5 attempts'):
+                        module.Repository('.').run('push', 'origin')
+                self.assertEqual(run.call_count, 5)
+                self.assertEqual(sleep.call_args_list, [call(5), call(10), call(20), call(30)])
+
+    def test_permanent_and_unknown_errors_are_not_retried(self):
+        for error in (b'Authentication failed', b'Permission denied (publickey)',
+                      b'The requested URL returned error: 403', b'Repository not found',
+                      b'SSL certificate problem', b'Host key verification failed',
+                      b'[rejected] main -> main (non-fast-forward)\nConnection reset',
+                      b'[remote rejected] hook declined', b'Unknown failure'):
+            with self.subTest(error=error):
+                result = subprocess.CompletedProcess([], 128, b'', error)
+                with patch.object(module.subprocess, 'run', return_value=result) as run, \
+                        patch('time.sleep') as sleep:
+                    with self.assertRaises(module.SyncError):
+                        module.Repository('.').run('push', 'origin')
+                self.assertEqual(run.call_count, 1)
+                sleep.assert_not_called()
+
+    def test_local_commands_and_missing_git_are_not_retried(self):
+        for command, failure in (('commit', subprocess.TimeoutExpired('git', 60)),
+                                 ('status', subprocess.CompletedProcess([], 128, b'', b'Timed out')),
+                                 ('fetch', FileNotFoundError('git'))):
+            with self.subTest(command=command):
+                with patch.object(module.subprocess, 'run', side_effect=[failure]) as run, \
+                        patch('time.sleep') as sleep:
+                    with self.assertRaises(module.SyncError):
+                        module.Repository('.').run(command)
+                self.assertEqual(run.call_count, 1)
+                sleep.assert_not_called()
+
+    def test_known_network_errors_retry_but_auth_failure_stops_next_attempt(self):
+        for error in (b'Could not resolve host: github.com',
+                      b'Failed to connect to github.com port 443: Could not connect to server',
+                      b'RPC failed; curl 56 Recv failure: Connection was reset',
+                      b'The remote end hung up unexpectedly', b'fatal: early EOF',
+                      b'The requested URL returned error: 503'):
+            with self.subTest(error=error):
+                results = [subprocess.CompletedProcess([], 128, b'', error),
+                           subprocess.CompletedProcess([], 128, b'', b'Authentication failed')]
+                with patch.object(module.subprocess, 'run', side_effect=results) as run, \
+                        patch('time.sleep') as sleep, redirect_stderr(io.StringIO()):
+                    with self.assertRaises(module.SyncError):
+                        module.Repository('.').run('fetch', 'origin')
+                self.assertEqual(run.call_count, 2)
+                sleep.assert_called_once_with(5)
 
 
 class SyncTests(unittest.TestCase):
@@ -166,6 +242,56 @@ class SyncTests(unittest.TestCase):
         self.git(self.remote, "config", "core.bare", "true")
         self.run_sync(self.a, "push")
         self.assertEqual(self.git(self.a, "rev-parse", "HEAD"), self.git(self.remote, "rev-parse", "main"))
+
+    def test_lost_push_response_does_not_create_duplicate_commit(self):
+        self.edit(self.a, 'network recovery\n')
+        before = int(self.git(self.a, 'rev-list', '--count', 'HEAD'))
+        real_run = subprocess.run
+        pushes = []
+
+        def lost_response(args, **kwargs):
+            result = real_run(args, **kwargs)
+            if args[3] == 'push':
+                pushes.append(args)
+                if len(pushes) == 1:
+                    self.assertEqual(result.returncode, 0)
+                    raise subprocess.TimeoutExpired(args, 60)
+            return result
+
+        with patch.object(module.subprocess, 'run', side_effect=lost_response), \
+                patch('time.sleep'), redirect_stderr(io.StringIO()):
+            self.run_sync(self.a, 'push')
+        self.assertEqual(len(pushes), 2)
+        self.assertEqual(pushes[0], pushes[1])
+        self.assertEqual(before + 1, int(self.git(self.a, 'rev-list', '--count', 'HEAD')))
+        self.assertEqual(self.git(self.a, 'rev-parse', 'HEAD'), self.git(self.remote, 'rev-parse', 'main'))
+        self.assertFalse((self.a / '.git/learning-sync.lock').exists())
+
+    def test_exhausted_network_retries_retain_commit_for_later_sync(self):
+        self.edit(self.a, 'offline note\n')
+        remote_before = self.git(self.remote, 'rev-parse', 'main')
+        real_run = subprocess.run
+        pushes = []
+
+        def offline(args, **kwargs):
+            if args[3] == 'push':
+                pushes.append(args)
+                return subprocess.CompletedProcess(args, 128, b'', b'Connection timed out')
+            return real_run(args, **kwargs)
+
+        with patch.object(module.subprocess, 'run', side_effect=offline), \
+                patch('time.sleep'), redirect_stderr(io.StringIO()):
+            with self.assertRaises(module.SyncError):
+                self.run_sync(self.a, 'push')
+        self.assertEqual(len(pushes), 5)
+        local_commit = self.git(self.a, 'rev-parse', 'HEAD')
+        self.assertNotEqual(local_commit, remote_before)
+        self.assertEqual(remote_before, self.git(self.remote, 'rev-parse', 'main'))
+        self.assertEqual('', self.git(self.a, 'status', '--porcelain'))
+        self.assertFalse((self.a / '.git/learning-sync.lock').exists())
+        self.run_sync(self.a, 'push')
+        self.assertEqual(local_commit, self.git(self.a, 'rev-parse', 'HEAD'))
+        self.assertEqual(local_commit, self.git(self.remote, 'rev-parse', 'main'))
 
 
 if __name__ == "__main__":

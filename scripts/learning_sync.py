@@ -6,7 +6,23 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
+
+NETWORK_RETRY_DELAYS = (5, 10, 20, 30)  # Five attempts including the first.
+PERMANENT_REMOTE_ERROR = re.compile(
+    rb"authentication failed|permission denied|access denied|repository not found|"
+    rb"could not read username|could not read password|proxy authentication required|"
+    rb"returned error: (?:401|403|404|407)\b|non-fast-forward|\[rejected\]|"
+    rb"\[remote rejected\]|host key verification failed|ssl certificate problem|"
+    rb"certificate verify failed", re.I)
+TRANSIENT_REMOTE_ERROR = re.compile(
+    rb"timed out|timeout|could not resolve (?:host|proxy|hostname)|"
+    rb"failed to connect|could not connect to server|connection (?:was )?reset|"
+    rb"connection refused|network is unreachable|recv failure|send failure|"
+    rb"remote end hung up unexpectedly|early eof|empty reply from server|"
+    rb"tls connection was non-properly terminated|"
+    rb"returned error: (?:408|429|500|502|503|504)\b", re.I)
 
 TARGETS = {
     "https://github.com/Terrencezifeng/k8s_learning.git",
@@ -36,20 +52,40 @@ class Repository:
         self.root = Path(root).resolve()
         self.env = os.environ.copy()
         self.env.update(GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never",
-                        GIT_LITERAL_PATHSPECS="1")
+                        GIT_LITERAL_PATHSPECS="1", LC_ALL="C", LANG="C")
         self.env.setdefault("GIT_SSH_COMMAND", "ssh -oBatchMode=yes")
 
     def run(self, *args, ok=(0,)):
-        try:
-            result = subprocess.run(["git", "-C", str(self.root), *args],
-                                    capture_output=True, env=self.env, timeout=60)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise SyncError("Git unavailable or timed out; local files retained.") from exc
-        if result.returncode not in ok:
-            # Do not print arbitrary remote errors, diffs or credential-helper output.
-            raise SyncError("git " + args[0] + " failed; check network, Git login, "
-                            "permissions and git status. No force/reset was attempted.")
-        return result
+        # Retry only the same fetch/push, never add/commit or the whole sync.
+        # A push whose response was lost can safely report up-to-date on retry.
+        network = args[0] in {"fetch", "push"}
+        attempts = len(NETWORK_RETRY_DELAYS) + 1 if network else 1
+        for attempt in range(1, attempts + 1):
+            timed_out = False
+            try:
+                result = subprocess.run(["git", "-C", str(self.root), *args],
+                                        capture_output=True, env=self.env, timeout=60)
+                if result.returncode in ok:
+                    return result
+                output = result.stderr + result.stdout
+            except subprocess.TimeoutExpired as exc:
+                timed_out = True
+                output = (exc.stderr or b"") + (exc.output or b"")
+            except OSError as exc:
+                raise SyncError("Git unavailable; local files retained.") from exc
+            retryable = (network and not PERMANENT_REMOTE_ERROR.search(output) and
+                         (timed_out or TRANSIENT_REMOTE_ERROR.search(output)))
+            if not retryable or attempt == attempts:
+                # Never print raw remote/credential-helper output or timeout data.
+                raise SyncError("git " + args[0] + " failed after " + str(attempt) +
+                                " attempts; local files/commits retained. Check network, "
+                                "Git login, permissions and git status. "
+                                "No force/reset was attempted.")
+            delay = NETWORK_RETRY_DELAYS[attempt - 1]
+            print("git " + args[0] + " transient network failure; retry " +
+                  str(attempt + 1) + "/" + str(attempts) + " in " + str(delay) + "s.",
+                  file=sys.stderr, flush=True)
+            time.sleep(delay)
 
     def text(self, *args):
         return self.run(*args).stdout.decode("utf-8", "strict").strip()
