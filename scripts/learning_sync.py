@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Conservative, session-triggered Markdown sync. Python 3.9+, Git; no packages."""
 import argparse
+from contextlib import contextmanager
+import json
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -129,7 +131,7 @@ def inspect_revision(repo, revision, path):
     inspect_content(path, repo.run("show", revision + ":" + path).stdout)
 
 
-def sync(root, mode, targets=None):
+def repository(root, targets=None):
     repo = Repository(root)
     approved = TARGETS if targets is None else targets  # Local test repositories only.
     if Path(repo.text("rev-parse", "--show-toplevel")).resolve() != repo.root:
@@ -142,21 +144,117 @@ def sync(root, mode, targets=None):
     if len(push_urls) != 1 or push_urls[0] not in approved:
         raise SyncError("Unexpected push destination; refusing to publish.")
     gitdir = Path(repo.text("rev-parse", "--absolute-git-dir"))
-    lock = gitdir / "learning-sync.lock"
+    return repo, gitdir
+
+
+@contextmanager
+def repository_lock(gitdir, name):
+    lock = gitdir / name
     try:
         fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError as exc:
-        raise SyncError("Another sync is active, or a stale learning-sync.lock needs review.") from exc
+        raise SyncError("Another operation is active, or a stale " + name + " needs review.") from exc
     try:
         with os.fdopen(fd, "w") as stream:
             stream.write(str(os.getpid()))
-        if any((gitdir / marker).exists() for marker in
-               ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")):
-            raise SyncError("Finish the existing Git operation before syncing.")
-        if repo.run("ls-files", "-u").stdout:
-            raise SyncError("Unresolved conflicts; preserve both sides and resolve manually.")
-        if repo.run("diff", "--cached", "--name-only", "-z").stdout:
-            raise SyncError("Existing staged work found; it was not modified or committed.")
+        yield
+    finally:
+        lock.unlink()
+
+
+def check_operation(repo, gitdir, allow_staged=False):
+    if any((gitdir / marker).exists() for marker in
+           ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")):
+        raise SyncError("Finish the existing Git operation before syncing.")
+    if repo.run("ls-files", "-u").stdout:
+        raise SyncError("Unresolved conflicts; preserve both sides and resolve manually.")
+    if not allow_staged and repo.run("diff", "--cached", "--name-only", "-z").stdout:
+        raise SyncError("Existing staged work found; it was not modified or committed.")
+
+
+def inspect_history(repo, base, target):
+    # Check every unpublished revision, including secrets removed in later commits.
+    for commit in repo.text("rev-list", base + ".." + target).splitlines():
+        for path in repo.paths("diff-tree", "--root", "--no-commit-id", "-r", "-m",
+                               "--no-renames", "--name-only", "-z", commit):
+            inspect_revision(repo, commit, path)
+
+
+def commit_notes(repo):
+    paths = sorted(set(repo.paths("diff", "--name-only", "-z", "--no-renames", "HEAD") +
+                       repo.paths("ls-files", "--others", "--exclude-standard", "-z")))
+    for path in paths:
+        if not allowed(path):
+            raise SyncError("Manual review required outside Markdown sync scope: " + path)
+        file = repo.root / path
+        if file.is_symlink():
+            raise SyncError("Symlinks are not synced: " + path)
+        try:
+            file.resolve().relative_to(repo.root)
+        except ValueError as exc:
+            raise SyncError("File resolves outside project: " + path) from exc
+        if file.exists():
+            inspect_content(path, file.read_bytes())
+    inspect_history(repo, "refs/remotes/origin/main", "HEAD")
+    if paths:
+        repo.run("add", "--all", "--", *paths)
+        tree = repo.text("write-tree")
+        for path in repo.paths("diff", "--cached", "--name-only", "-z", "--no-renames"):
+            inspect_revision(repo, tree, path)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        repo.run("commit", "-m", "docs: sync learning notes " + stamp)
+    return repo.text("rev-parse", "HEAD")
+
+
+def local_status(root, targets=None):
+    """No network; the tracking ref is a cache, never proof of remote freshness."""
+    repo, _ = repository(root, targets)
+    ahead, behind = map(int, repo.text("rev-list", "--left-right", "--count",
+                                      "HEAD...refs/remotes/origin/main").split())
+    return {"head": repo.text("rev-parse", "HEAD"), "ahead_cached": ahead,
+            "behind_cached": behind, "dirty": repo.dirty(),
+            "staged": bool(repo.run("diff", "--cached", "--name-only", "-z").stdout),
+            "remote_checked": False}
+
+
+def checkpoint(root, targets=None):
+    """Make a local Markdown commit without fetching or waiting for the publisher."""
+    repo, gitdir = repository(root, targets)
+    with repository_lock(gitdir, "learning-sync.lock"):
+        check_operation(repo, gitdir)
+        return commit_notes(repo)
+
+
+def publish(root, revision, targets=None):
+    """Upload an immutable commit; never stage, commit, merge or edit study files."""
+    repo, gitdir = repository(root, targets)
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise SyncError("Publish requires a full immutable 40-character commit SHA.")
+    target = repo.text("rev-parse", "--verify", revision + "^{commit}")
+    if target != revision or repo.run("merge-base", "--is-ancestor", target,
+                                      "refs/heads/main", ok=(0, 1)).returncode:
+        raise SyncError("Requested snapshot is not on local main.")
+    # A separate lock permits local checkpoints during slow network retries.
+    with repository_lock(gitdir, "learning-publish.lock"):
+        check_operation(repo, gitdir, allow_staged=True)
+        repo.run("fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main")
+        remote = repo.text("rev-parse", "refs/remotes/origin/main")
+        if not repo.run("merge-base", "--is-ancestor", target, remote, ok=(0, 1)).returncode:
+            extra = " Remote has newer commits; local checkout unchanged." if target != remote else ""
+            return "Already published; " + target + extra
+        if repo.run("merge-base", "--is-ancestor", remote, target, ok=(0, 1)).returncode:
+            raise SyncError("Remote and snapshot diverged; local checkout retained. No automatic merge.")
+        inspect_history(repo, remote, target)
+        repo.run("push", "origin", target + ":refs/heads/main")
+        return "Publish complete; " + target
+
+
+def sync(root, mode, targets=None):
+    """Legacy foreground pull/push for Mac and deliberate maintenance boundaries."""
+    repo, gitdir = repository(root, targets)
+    with repository_lock(gitdir, "learning-sync.lock"), \
+            repository_lock(gitdir, "learning-publish.lock"):
+        check_operation(repo, gitdir)
         repo.run("fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main")
         ahead, behind = map(int, repo.text("rev-list", "--left-right", "--count",
                                           "HEAD...refs/remotes/origin/main").split())
@@ -172,46 +270,29 @@ def sync(root, mode, targets=None):
             if repo.dirty():
                 raise SyncError("Remote advanced while local edits exist; preserve both and reconcile.")
             repo.run("merge", "--ff-only", "refs/remotes/origin/main")
-        paths = sorted(set(repo.paths("diff", "--name-only", "-z", "--no-renames", "HEAD") +
-                           repo.paths("ls-files", "--others", "--exclude-standard", "-z")))
-        for path in paths:
-            if not allowed(path):
-                raise SyncError("Manual review required outside Markdown sync scope: " + path)
-            file = repo.root / path
-            if file.is_symlink():
-                raise SyncError("Symlinks are not synced: " + path)
-            try:
-                file.resolve().relative_to(repo.root)
-            except ValueError as exc:
-                raise SyncError("File resolves outside project: " + path) from exc
-            if file.exists():
-                inspect_content(path, file.read_bytes())
-        # Check every unpublished revision, including secrets later removed in another commit.
-        for commit in repo.text("rev-list", "refs/remotes/origin/main..HEAD").splitlines():
-            for path in repo.paths("diff-tree", "--root", "--no-commit-id", "-r", "-m",
-                                   "--no-renames", "--name-only", "-z", commit):
-                inspect_revision(repo, commit, path)
-        if paths:
-            repo.run("add", "--all", "--", *paths)
-            # Recheck staged bytes in case an editor saved while staging.
-            tree = repo.text("write-tree")
-            for path in repo.paths("diff", "--cached", "--name-only", "-z", "--no-renames"):
-                inspect_revision(repo, tree, path)
-            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            repo.run("commit", "-m", "docs: sync learning notes " + stamp)
-        repo.run("push", "origin", "HEAD:refs/heads/main")
+        target = commit_notes(repo)
+        repo.run("push", "origin", target + ":refs/heads/main")
         # Push errors (including a concurrent writer) retain the local commit for retry.
-        return "Push complete; " + repo.text("rev-parse", "--short", "HEAD")
-    finally:
-        lock.unlink()
+        return "Push complete; " + target[:7]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("pull", "push"))
+    parser.add_argument("mode", choices=("pull", "push", "status", "checkpoint", "publish"))
+    parser.add_argument("revision", nargs="?", help="Full commit SHA; required only for publish")
     args = parser.parse_args()
+    if (args.mode == "publish") != bool(args.revision):
+        parser.error("Only publish takes a required commit SHA")
     try:
-        print(sync(Path(__file__).resolve().parents[1], args.mode))
+        root = Path(__file__).resolve().parents[1]
+        if args.mode == "status":
+            print(json.dumps(local_status(root), sort_keys=True))
+        elif args.mode == "checkpoint":
+            print("Checkpoint ready; " + checkpoint(root))
+        elif args.mode == "publish":
+            print(publish(root, args.revision))
+        else:
+            print(sync(root, args.mode))
     except (SyncError, UnicodeError, ValueError) as exc:
         print("SYNC STOPPED: " + str(exc), file=sys.stderr)
         return 1

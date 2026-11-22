@@ -293,6 +293,150 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(local_commit, self.git(self.a, 'rev-parse', 'HEAD'))
         self.assertEqual(local_commit, self.git(self.remote, 'rev-parse', 'main'))
 
+    def test_checkpoint_and_status_never_use_network(self):
+        self.edit(self.a, 'chapter done\n')
+        remote_before = self.git(self.remote, 'rev-parse', 'main')
+        real_run = module.Repository.run
+
+        def local_only(repo, *args, **kwargs):
+            self.assertNotIn(args[0], {'fetch', 'push', 'ls-remote'})
+            return real_run(repo, *args, **kwargs)
+
+        with patch.object(module.Repository, 'run', local_only):
+            snapshot = module.checkpoint(self.a, {str(self.remote)})
+            status = module.local_status(self.a, {str(self.remote)})
+            self.assertEqual(module.checkpoint(self.a, {str(self.remote)}), snapshot)
+        self.assertEqual(status['head'], snapshot)
+        self.assertEqual(status['ahead_cached'], 1)
+        self.assertFalse(status['remote_checked'])
+        self.assertFalse(status['dirty'])
+        self.assertEqual(remote_before, self.git(self.remote, 'rev-parse', 'main'))
+
+    def test_publisher_uploads_only_snapshot_and_preserves_new_edits_and_index(self):
+        self.edit(self.a, 'first chapter\n')
+        snapshot = module.checkpoint(self.a, {str(self.remote)})
+        self.edit(self.a, 'second chapter\n')
+        self.git(self.a, 'add', 'docs')
+        staged = self.git(self.a, 'diff', '--cached')
+        self.edit(self.a, 'still editing\n')
+        working = self.git(self.a, 'diff')
+        module.publish(self.a, snapshot, {str(self.remote)})
+        self.assertEqual(staged, self.git(self.a, 'diff', '--cached'))
+        self.assertEqual(working, self.git(self.a, 'diff'))
+        self.assertEqual(snapshot, self.git(self.remote, 'rev-parse', 'main'))
+        self.assertEqual('first chapter', self.git(self.remote, 'show', 'main:docs/learning/笔记.md'))
+
+    def test_publisher_retry_remains_fixed_while_next_checkpoint_succeeds(self):
+        self.edit(self.a, 'first chapter\n')
+        snapshot = module.checkpoint(self.a, {str(self.remote)})
+        real_run = subprocess.run
+        pushes = []
+        next_snapshot = []
+
+        def next_chapter_during_timeout(args, **kwargs):
+            if args[3] == 'push':
+                pushes.append(args)
+                if len(pushes) == 1:
+                    self.edit(self.a, 'second chapter\n')
+                    next_snapshot.append(module.checkpoint(self.a, {str(self.remote)}))
+                    raise subprocess.TimeoutExpired(args, 60)
+            return real_run(args, **kwargs)
+
+        with patch.object(module.subprocess, 'run', side_effect=next_chapter_during_timeout), \
+                patch('time.sleep'), redirect_stderr(io.StringIO()):
+            module.publish(self.a, snapshot, {str(self.remote)})
+        self.assertEqual(len(pushes), 2)
+        self.assertTrue(all(args[-1] == snapshot + ':refs/heads/main' for args in pushes))
+        self.assertEqual(snapshot, self.git(self.remote, 'rev-parse', 'main'))
+        self.assertEqual(next_snapshot[0], self.git(self.a, 'rev-parse', 'HEAD'))
+        module.publish(self.a, next_snapshot[0], {str(self.remote)})
+        self.assertEqual(next_snapshot[0], self.git(self.remote, 'rev-parse', 'main'))
+
+    def test_old_publish_request_cannot_rewind_remote(self):
+        self.edit(self.a, 'first\n')
+        first = module.checkpoint(self.a, {str(self.remote)})
+        self.edit(self.a, 'second\n')
+        second = module.checkpoint(self.a, {str(self.remote)})
+        module.publish(self.a, second, {str(self.remote)})
+        self.assertIn('Already published', module.publish(self.a, first, {str(self.remote)}))
+        self.assertEqual(second, self.git(self.remote, 'rev-parse', 'main'))
+
+    def test_remote_ahead_is_fetched_but_not_merged_into_study_files(self):
+        snapshot = self.git(self.b, 'rev-parse', 'HEAD')
+        self.edit(self.a, 'remote update\n')
+        self.run_sync(self.a, 'push')
+        self.edit(self.b, 'local ongoing\n')
+        before = self.git(self.b, 'status', '--porcelain')
+        self.assertIn('newer commits', module.publish(self.b, snapshot, {str(self.remote)}))
+        self.assertEqual(snapshot, self.git(self.b, 'rev-parse', 'HEAD'))
+        self.assertEqual(before, self.git(self.b, 'status', '--porcelain'))
+        self.assertEqual(1, module.local_status(self.b, {str(self.remote)})['behind_cached'])
+
+    def test_publisher_refuses_divergence_without_touching_local_work(self):
+        self.edit(self.a, 'a\n')
+        self.edit(self.b, 'b\n')
+        first = module.checkpoint(self.a, {str(self.remote)})
+        second = module.checkpoint(self.b, {str(self.remote)})
+        module.publish(self.a, first, {str(self.remote)})
+        with self.assertRaisesRegex(module.SyncError, 'diverged'):
+            module.publish(self.b, second, {str(self.remote)})
+        self.assertEqual(second, self.git(self.b, 'rev-parse', 'HEAD'))
+        self.assertEqual(first, self.git(self.remote, 'rev-parse', 'main'))
+        self.assertFalse((self.b / '.git/learning-publish.lock').exists())
+
+    def test_checkpoint_and_publisher_retain_existing_safety_checks(self):
+        self.edit(self.a, 'manual stage\n')
+        self.git(self.a, 'add', 'docs')
+        before = self.git(self.a, 'diff', '--cached')
+        with self.assertRaises(module.SyncError): module.checkpoint(self.a, {str(self.remote)})
+        self.assertEqual(before, self.git(self.a, 'diff', '--cached'))
+        # Use the other checkout to test unpublished history, including removed secrets.
+        self.edit(self.b, '-----BEGIN ' + 'RSA PRIVATE KEY-----\n')
+        self.git(self.b, 'add', 'docs')
+        self.git(self.b, 'commit', '-m', 'Bad revision')
+        self.edit(self.b, 'removed\n')
+        self.git(self.b, 'add', 'docs')
+        self.git(self.b, 'commit', '-m', 'Removed text')
+        snapshot = self.git(self.b, 'rev-parse', 'HEAD')
+        with self.assertRaises(module.SyncError):
+            module.publish(self.b, snapshot, {str(self.remote)})
+        with self.assertRaises(module.SyncError): module.checkpoint(self.b, {str(self.remote)})
+
+    def test_publisher_requires_immutable_snapshot_on_main_and_trusted_remote(self):
+        snapshot = self.git(self.a, 'rev-parse', 'HEAD')
+        for revision in ('HEAD', 'main', snapshot[:7], '-' + snapshot):
+            with self.subTest(revision=revision):
+                with self.assertRaises(module.SyncError):
+                    module.publish(self.a, revision, {str(self.remote)})
+        with self.assertRaises(module.SyncError): module.publish(self.a, snapshot)
+        self.git(self.a, 'checkout', '-b', 'codex/other')
+        self.edit(self.a, 'other branch\n')
+        self.git(self.a, 'add', 'docs')
+        self.git(self.a, 'commit', '-m', 'Other branch')
+        other = self.git(self.a, 'rev-parse', 'HEAD')
+        self.git(self.a, 'checkout', 'main')
+        with self.assertRaises(module.SyncError):
+            module.publish(self.a, other, {str(self.remote)})
+
+    def test_publisher_releases_network_lock_after_retry_exhaustion(self):
+        self.edit(self.a, 'chapter\n')
+        snapshot = module.checkpoint(self.a, {str(self.remote)})
+        real_run = subprocess.run
+
+        def offline(args, **kwargs):
+            if args[3] == 'push':
+                raise subprocess.TimeoutExpired(args, 60)
+            return real_run(args, **kwargs)
+
+        with patch.object(module.subprocess, 'run', side_effect=offline), \
+                patch('time.sleep'), redirect_stderr(io.StringIO()):
+            with self.assertRaises(module.SyncError):
+                module.publish(self.a, snapshot, {str(self.remote)})
+        self.assertFalse((self.a / '.git/learning-publish.lock').exists())
+        self.assertEqual(snapshot, self.git(self.a, 'rev-parse', 'HEAD'))
+        module.publish(self.a, snapshot, {str(self.remote)})
+        self.assertEqual(snapshot, self.git(self.remote, 'rev-parse', 'main'))
+
 
 if __name__ == "__main__":
     unittest.main()
