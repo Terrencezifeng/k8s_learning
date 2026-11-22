@@ -1,6 +1,6 @@
 # 学习暂存
 
-状态：2026-11-22 Q5 已提交，Q5a 的已有 Pod 不因 Scheduler 停止而停止、新 Pod 卡在调度环节，均书面通过。Q5b 的 containerd、镜像仓库与 etcd 基础职责方向正确；kubelet 通信对象和镜像拉取主体已纠正、待复述，见 4.43。Q1–Q4 通过证据保留。观看位置 P21，无本轮实操，学习时长未知，历史记录尚未归档。
+状态：2026-11-22 用户正确补齐人工查询由 kubectl 发起，经 API Server 访问资源数据，写出 kubectl↔API Server↔etcd。Q5b 讲解后书面通过，Q1–Q5 本轮题目全部收尾，无遗留待答题，见 4.46。观看位置 P21，建议后续进入 P22 控制器，但未记作用户已观看或掌握。无本轮实操，学习时长未知，历史记录尚未归档。
 
 2026-10-28 进行了学习方式和笔记机制配置，未将其计作课程学习；学习时长未知。
 
@@ -567,9 +567,36 @@
 - 官方依据：[组件职责](https://kubernetes.io/docs/concepts/overview/components/)、[节点与控制平面通信](https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/)、[containerd CRI 架构](https://github.com/containerd/containerd/blob/main/docs/cri/architecture.md)。本项目版本来自现有集群资料，讨论 v1.22.2 与课程 v1.29 共通的基础职责；本轮未实查集群，也不引入新版 CRI API 要求。
 - 状态与边界：Q1–Q4、Q5a 已书面通过；Q5b 通信与拉取主体已解释未验证。没有章末技能等级、实操证据或新观看报告；观看位置仍 P21，学习时长未知，继续暂存。同步等待和进程处理不计入学习时长。
 
+### 4.44 2026-11-22：Q5b 拉取主线正确，继续区分客户端与节点服务
+
+- 用户续答原意：1）kubelet 通过 API Server 访问 etcd 获取 Pod 配置状态，“上报对象也是通过 API server 上报给 kubectl”，句末角色为“监视和控制节点上的 pod”；2）kubelet 在创建 Pod 时可能需要拉镜像，会请求“pod 里面的 containerd”，由 containerd 按需从镜像仓库或其他来源拉取并创建。保留讲解后的本次表现，不覆盖 4.43 首答。
+- 评价：通过 API Server 获取 Pod 信息的方向正确；kubelet 请求 containerd、由 containerd 拉取镜像的主线已在帮助后正确复述，不再整条重考。仍将 kubectl 作为状态上报终点，并明确将 containerd 放在 Pod 内，Q5b 尚未整题通过。句末“角色”指代不够明确，未擅自把它当作用户已正确界定 kubectl。
+- 助手再次解释通信：本题 kubelet 从 API Server 获取分配到 node1 的 Pod 配置，向 API Server 上报 Pod 状态；持久化由 API Server 与 etcd 交互。kubectl 是用户运行的命令行客户端，通过 API Server 提交管理请求、查询或观察状态。状态的上报与用户稍后查询是两次不同交互，不能把 kubectl 写成 kubelet 的上报目标；关闭用户的 kubectl 不会停止 kubelet 的常驻管理和状态上报。此处“配置”指 Pod 配置，不把 kubelet 自身配置文件来源混入。
+- 助手再次解释位置：本题 containerd 与 kubelet 同在 node1，作为节点上的运行时服务管理 Pod 中的容器；应用容器尚未启动时，它已经可以接收 kubelet 的 CRI 请求并拉取镜像。不是每个普通应用 Pod 内各放一个 containerd；本题镜像来源已明确为可访问的镜像仓库，无需扩展到其他来源或展开底层 runc。
+- 讲解方式：用组件关系图把 kubectl、API Server、etcd 与 node1 内的 kubelet／containerd／应用 Pod 放在各自位置，分别标出获取配置、状态上报、状态查询、CRI 请求与拉取镜像，避免再次要求原段逐字背诵。官方核对：[节点与控制平面通信](https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/)、[containerd CRI 架构](https://github.com/containerd/containerd/blob/main/docs/cri/architecture.md)。沿用 v1.22.2 与课程 v1.29 共通基础行为，无新版本 API 要求。
+- 仅续问 Q5b 两个薄弱点（讲解后，待答）：背景为 v1.22.2、containerd，普通 Pod 已绑定 node1，API Server／etcd／kubelet／containerd 正常，node1 没有所需应用镜像且仓库可访问。新增书面观察情境：用户关闭自己电脑上的全部 kubectl，稍后再查询 Pod；应用容器当前尚未启动。1）关闭 kubectl 是否影响 kubelet 管理／状态上报，并写出状态上报与稍后查询的两条路径；2）此时 containerd 位于哪里，为何应用容器没启动时仍能拉取镜像。提供两小问对应空白模板，不重考 Q5a、etcd／仓库基础职责或已正确复述的请求主体。
+- 状态边界：Q1–Q4、Q5a 保留通过；Q5b 部分正确，通信关系与运行时位置已解释未验证。无真实命令输出、集群连接、新观看报告或章末技能等级；观看位置 P21，学习时长未知，继续暂存并同步。
+
+### 4.45 2026-11-22：Q5b 上报与运行时位置通过，仅补人工查询路径
+
+- 用户再续答：关闭 kubectl 不会影响管理和上报，因为 Pod 由各自节点上的 kubelet 管理；首句写作“不会影响 kubectl 对 pod 的管理和上报”，结合后半句按第二个 kubectl 应为 kubelet 的措辞笔误处理，不据此另判核心结论错误。给出上报路径 kubelet→API Server→etcd；给出查询路径 kubelet↔API Server↔etcd。containerd 位于节点，“不依赖于 pod 或者 kubelet”，可以在容器未启动时和镜像仓库通信。
+- 评价：关闭客户端不影响 kubelet 管理、状态上报与持久化路径、containerd 节点位置及先于应用容器运行均在讲解后书面通过；保留 4.44 已正确复述的拉取主线，不重复考。唯一未补齐的是原题“用户稍后运行 kubectl 查询 Pod”的查询发起者；用户所写 kubelet 路径适合讨论节点获取配置，不能替代本轮人工查询的客户端路径。
+- 助手澄清：这里的不依赖按 containerd 服务进程可以独立运行理解是正确的，不把它曲解为自动拉取所有 Pod 镜像；在本题 Kubernetes 流程中仍由 kubelet 通过 CRI 请求 containerd 拉取镜像并管理容器。无需再考 containerd 位置或服务独立性。
+- 助手讲解人工查询：运行 kubectl get pods 时，由管理电脑上的 kubectl 向 API Server 发起请求，API Server 返回 Pod 数据给 kubectl，再显示给用户。etcd 由 API Server 访问，kubectl 不直接读 etcd；该查询无需临时唤起 kubelet 为 kubectl 直接返回一份状态。持续状态上报与人发起一次查询是两条交互，不把每次查询固定描述为必须绕过 API Server 缓存直接访问 etcd。
+- 仅续问 Q5b 第 1 小问的查询部分（讲解后，待答）：书面背景为 Kubernetes v1.22.2，普通 Pod 已绑定 node1，API Server、etcd、节点 kubelet／containerd 正常；用户在管理电脑重新运行 kubectl get pods 查询 Pod 列表。问由哪个客户端向哪个服务端发出请求，查询结果返回给谁，用箭头写出请求与返回。未引入新故障或实际执行要求，不重考第 2 小问及第 1 小问已通过部分；题末附单项空白模板。
+- 记录边界：Q1–Q4、Q5a 通过与 Q5b 帮助后正确证据保留，Q5b 整题仍待人工查询路径补齐，不新增章末等级或实操证据。观看位置 P21，学习时长未知；上轮未同步的三份学习 Markdown 保留并一并尝试同步，不覆盖无关文件。
+
+### 4.46 2026-11-22：Q5b 人工查询路径通过，Q1–Q5 书面收尾
+
+- 用户补答：人工查询是使用命令行 kubectl 查询 Pod 状态，因此路径为 kubectl↔API Server↔etcd。正确指出本次人工查询的发起者，并用双向箭头表达请求和返回，Q5b 剩余查询部分在讲解后书面通过。
+- 反馈规范：该图可作为资源访问关系简图；请求由 kubectl 发给 API Server，查询结果经 API Server 返回 kubectl，etcd 由 API Server 访问。保留 4.45 的缓存边界，不额外要求用户背诵每次请求都直读 etcd，也不因已补齐正确路径继续机械追问。
+- 本轮结论：结合 4.43–4.45，Q5a 调度故障影响及 Q5b 通信、镜像拉取、运行时位置、仓库／资源数据存储职责均已有正确书面证据，Q5 全题收尾；Q1–Q5 已全部书面完成。保留 Q2、Q4、Q5b 的首答、帮助和修正过程，不冒充首次独立正确，不新增章末技能等级，不代表实际停止过 Scheduler 或完成真实故障验收。
+- 下一步仅为建议：按已核对课程索引进入 P22《第五章.k8sPod控制器-控制器1》，再顺序推进控制器专题。可联系用户已有扩容、删除受控 Pod 后补建的实操，阅读时关注期望状态、实际状态与控制循环；本轮不追加新题，不替用户宣布主题学完或自动启动第 10 节章末评估。P22 以后无用户观看报告，助手预习不计为用户学习完成。
+- 保存边界：实际学习时长未知，继续暂存而非正式归档；没有集群连接或新实操。上两轮未同步的三份学习 Markdown 均为本会话授权记录，保留后与本次结果一并尝试同步；先前网络重试已耗尽，本轮一次限时 GitHub 请求恢复 200 后再恢复同步，不无限叠加失败重试。
+
 ## 5 下次续接
 
-先读 [PROGRESS.md](PROGRESS.md) 和 4.43，仅补 Q5b 的 kubelet 通信对象与镜像拉取主体。Q1–Q4、Q5a 通过证据保留，不重复考；Q5b 已答对的基础职责保留，后续复述记录帮助情况。观看位置 P21；未明确进入实操时不连接集群，Mac 只阅读与书面分析。学习时长未知。
+先读 [PROGRESS.md](PROGRESS.md) 和 4.46；Q1–Q5 已书面收尾，无遗留待答题，不重复追问已通过内容。观看位置 P21，下次优先依据用户新的观看报告或选择衔接；建议方向为 P22 控制器，尚未记作已学。保留帮助情况，未明确进入实操时不连接集群，Mac 只阅读与书面分析。学习时长未知。
 
 对应 P14–P25 的问题可直接查阅 [预习索引](video-notes/P014-P025-预习索引.md)；助手预习完成不覆盖上述未验证概念和历史实验状态。
 
